@@ -2,7 +2,9 @@
 
 * GitHub Snapshot of my configuration file for neovim
     * gruvbox, js-beautify, rust.vim, supertab, vim-airline, vim-javascript, vim-json, vim-sensible
+* zshrc 
+    * powerline10k
 * neofetch config with custom display
-    * altered neofetch config file to call Qubes distro - `~/.config/neofetch/config.conf`
-    * altered Qubes distro to reference custom ascii art - `/bin/neofetch`
+    * reference ascii_distro image `duck-half.ansii`
     * added new neofetch file into directory - `/etc/neofetch`
+    * copy config files from neofetch directory in repo `~/.config/neofetch/config.conf`, `opt/homebrew/bin/neofetch`
