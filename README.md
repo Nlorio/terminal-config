@@ -1,9 +1,12 @@
 # terminal-config
--> Fork code for every new company
-
 ## neovim
 1. Brew install neovim
 2. Configure `.vimrc`
+
+## lazyvim
+1. https://www.lazyvim.org/installation
+2. https://github.com/jesseduffield/lazygit
+3. Set config `.config/nvim`
 
 ## zshrc 
 1. Install and configure powerline10k
