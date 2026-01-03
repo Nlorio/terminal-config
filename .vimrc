@@ -14,8 +14,8 @@ set timeoutlen=5
                                                                                                                                                                                                            
                                                                                                                                                                                                            
 " color-scheme                                                                                                                                                                                             
-colorscheme gruvbox                                                                                                                                                                                        
-let g:gruvbox_transparent_bg = '1'                                                                                                                                                                         
+" colorscheme gruvbox                                                                                                                                                                                        
+" let g:gruvbox_transparent_bg = '1'                                                                                                                                                                         
                                                                                                                                                                                                            
 " tab                                                                                                                                                                                                      
 filetype plugin indent on                                                                                                                                                                                  

@@ -1,0 +1,5 @@
+# Backup directory (created by make backup)
+backup/
+
+# macOS
+.DS_Store

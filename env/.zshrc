@@ -1,0 +1,32 @@
+neofetch
+
+# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
+# Initialization code that may require console input (password prompts, [y/n]
+# confirmations, etc.) must go above this block; everything else may go below.
+if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+fi
+
+# profile
+source ~/.zsh_profile
+
+# functions
+source ~/.zsh_functions
+
+# alias
+alias tmux="tmux -2"
+
+# misc
+# export TERM=xterm-256color  # Let ghostty set its own TERM
+
+# Powerlevel10k
+source ~/powerlevel10k/powerlevel10k.zsh-theme
+
+# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+eval "$(pyenv init -)"
+eval "$(rbenv init -)"
+eval "$(direnv hook zsh)"
+export RIPGREP_CONFIG_PATH="/Users/nlorio/Documents/projects/notion-next/.ripgreprc"
+eval "$('/usr/local/bin/node' -r '/Users/nlorio/Documents/projects/notion-next/esbuild-runner.js' '/Users/nlorio/Documents/projects/notion-next/src/cli/main/notion.ts' completion --install)"
+export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
