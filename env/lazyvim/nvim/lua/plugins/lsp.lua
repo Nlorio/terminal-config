@@ -7,13 +7,26 @@ return {
           settings = {
             typescript = {
               tsserver = {
-                maxTsServerMemory = 16384,
+                maxTsServerMemory = 24276,
               },
+              -- experimental = {
+              --     useTsgo = true
+              -- }
+              -- implementationsCodeLens = {
+              --   enabled = true,
+              -- },
+              -- referencesCodeLens = {
+              --   enabled = true,
+              --   showOnAllFunctions = true,
+              -- },
             },
             javascript = {
               tsserver = {
-                maxTsServerMemory = 16384,
+                maxTsServerMemory = 24276,
               },
+            },
+            vtsls = {
+              autoUseWorkspaceTsdk = true,
             },
           },
         },

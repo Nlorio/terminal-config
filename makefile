@@ -50,9 +50,11 @@ install:
 
 link:
 	@echo "Creating symlinks..."
-	@mkdir -p $(HOME)/.config/nvim
+	@mkdir -p $(HOME)/.config
 	@mkdir -p $(HOME)/.config/neofetch
 	@mkdir -p $(HOME)/.config/ghostty
+	@# Remove nvim dir/symlink if exists, so we can replace it
+	@rm -rf $(HOME)/.config/nvim
 
 	@# Zsh
 	@ln -sfn $(REPO_DIR)/env/.zshrc $(HOME)/.zshrc
