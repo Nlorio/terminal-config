@@ -3,42 +3,31 @@ return {
     "neovim/nvim-lspconfig",
     opts = {
       servers = {
-        -- Enable tsgo (native TypeScript LSP)
         tsgo = {
+          enabled = true,
+          cmd = { "tsgo", "--lsp", "--stdio" },
+          filetypes = {
+            "javascript",
+            "javascriptreact",
+            "javascript.jsx",
+            "typescript",
+            "typescriptreact",
+            "typescript.tsx",
+          },
+          root_markers = {
+            "tsconfig.json",
+            "jsconfig.json",
+            "package.json",
+            ".git",
+            "tsconfig.base.json",
+          },
           flags = {
             debounce_text_changes = 150,
-            exit_timeout = 30000, -- 30 seconds
+            exit_timeout = 30000,
           },
         },
-        -- Disable vtsls when using tsgo
+        tsserver = { enabled = false },
         vtsls = { enabled = false },
-        -- vtsls = {
-        --   settings = {
-        --     typescript = {
-        --       tsserver = {
-        --         maxTsServerMemory = 24276,
-        --       },
-        --       -- experimental = {
-        --       --   useTsgo = true,
-        --       -- },
-        --       -- implementationsCodeLens = {
-        --       --   enabled = true,
-        --       -- },
-        --       -- referencesCodeLens = {
-        --       --   enabled = true,
-        --       --   showOnAllFunctions = true,
-        --       -- },
-        --     },
-        --     javascript = {
-        --       tsserver = {
-        --         maxTsServerMemory = 24276,
-        --       },
-        --     },
-        --     vtsls = {
-        --       autoUseWorkspaceTsdk = true,
-        --     },
-        --   },
-        -- },
       },
     },
   },
