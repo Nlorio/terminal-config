@@ -4,7 +4,12 @@ return {
     opts = {
       servers = {
         -- Enable tsgo (native TypeScript LSP)
-        tsgo = {},
+        tsgo = {
+          flags = {
+            debounce_text_changes = 150,
+            exit_timeout = 30000, -- 30 seconds
+          },
+        },
         -- Disable vtsls when using tsgo
         vtsls = { enabled = false },
         -- vtsls = {

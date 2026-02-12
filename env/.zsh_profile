@@ -17,6 +17,8 @@ gwa() {
   git branch "$branch" || true
   git worktree add "$worktree_path" "$branch"
 
+  # Set path
+  tmux attach -c "$worktree_path"
 
   # Send commands to the first window of the new tmux session
   tmux send-keys -t "$branch:0" "cd $worktree_path" C-m
@@ -47,5 +49,33 @@ gwa() {
   else
     # We're not in tmux, so attach
     tmux attach-session -t "$branch"
+  fi
+}
+
+gwr() {
+  if [ -z "$1" ]; then
+    echo "Usage: gwr <branch-name>"
+    return 1
+  fi
+
+  local branch="$1"
+  local worktree_path="$HOME/worktrees/$branch"
+
+  # Kill tmux session if it exists
+  if tmux has-session -t "$branch" 2>/dev/null; then
+    tmux kill-session -t "$branch"
+    echo "Killed tmux session: $branch"
+  fi
+
+  # Remove worktree if it exists
+  if [ -d "$worktree_path" ]; then
+    git worktree remove "$worktree_path" --force
+    echo "Removed worktree: $worktree_path"
+  fi
+
+  # Delete branch if it exists
+  if git show-ref --verify --quiet "refs/heads/$branch"; then
+    git branch -D "$branch"
+    echo "Deleted branch: $branch"
   fi
 }
