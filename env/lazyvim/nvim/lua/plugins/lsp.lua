@@ -22,12 +22,23 @@ return {
             "tsconfig.base.json",
           },
           flags = {
-            debounce_text_changes = 150,
+            debounce_text_changes = 250,
             exit_timeout = 30000,
           },
         },
         tsserver = { enabled = false },
         vtsls = { enabled = false },
+      },
+    },
+  },
+  {
+    "stevearc/conform.nvim",
+    opts = {
+      formatters_by_ft = {
+        typescript = { "prettier", "eslint_d" },
+        typescriptreact = { "prettier", "eslint_d" },
+        javascript = { "prettier", "eslint_d" },
+        javascriptreact = { "prettier", "eslint_d" },
       },
     },
   },
