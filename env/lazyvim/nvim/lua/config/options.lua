@@ -5,3 +5,5 @@
 -- Set to false to disable auto format
 -- vim.g.lazyvim_eslint_auto_format = true
 vim.g.lazyvim_picker = "fzf"
+
+vim.o.background = "dark"

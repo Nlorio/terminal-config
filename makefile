@@ -59,8 +59,10 @@ link:
 	@# Zsh
 	@ln -sfn $(REPO_DIR)/env/.zshrc $(HOME)/.zshrc
 	@ln -sfn $(REPO_DIR)/env/.zsh_profile $(HOME)/.zsh_profile
+	@ln -sfn $(REPO_DIR)/env/.zsh_functions $(HOME)/.zsh_functions
 	@echo "  ~/.zshrc -> env/.zshrc"
 	@echo "  ~/.zsh_profile -> env/.zsh_profile"
+	@echo "  ~/.zsh_functions -> env/.zsh_functions"
 
 	@# Tmux
 	@ln -sfn $(REPO_DIR)/env/.tmux.conf $(HOME)/.tmux.conf
@@ -78,7 +80,9 @@ link:
 
 	@# Ghostty
 	@ln -sfn $(REPO_DIR)/env/ghostty/config $(HOME)/.config/ghostty/config
+	@cp -r $(REPO_DIR)/env/ghostty/themes/ $(HOME)/.config/ghostty/themes/
 	@echo "  ~/.config/ghostty/config -> env/ghostty/config"
+	@echo "  ~/.config/ghostty/themes/ <- env/ghostty/themes/ (copied)"
 
 	@# Neofetch
 	@ln -sfn $(REPO_DIR)/neofetch/config.conf $(HOME)/.config/neofetch/config.conf
@@ -93,10 +97,12 @@ unlink:
 	@echo "Removing symlinks..."
 	@rm -f $(HOME)/.zshrc
 	@rm -f $(HOME)/.zsh_profile
+	@rm -f $(HOME)/.zsh_functions
 	@rm -f $(HOME)/.tmux.conf
 	@rm -f $(HOME)/.vimrc
 	@rm -f $(HOME)/.vim
 	@rm -f $(HOME)/.config/nvim
 	@rm -f $(HOME)/.config/ghostty/config
+	@rm -rf $(HOME)/.config/ghostty/themes
 	@rm -f $(HOME)/.config/neofetch/config.conf
 	@echo "Symlinks removed."

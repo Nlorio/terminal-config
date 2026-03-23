@@ -1,0 +1,33 @@
+function notion-rds-psql() {
+  local user="${NOTION_POSTGRES_USER:-developer}"
+  local db="$1"
+  local env="$(echo $db | awk -F'-' '{print $1}')"
+  shift
+  local secret="$(aws secretsmanager get-secret-value --secret-id gw-$env-postgres-$user | jq -jr '.SecretString | fromjson')"
+  PGUSER=$(echo $secret | jq -jr '.username') PGPASSWORD=$(echo $secret | jq -jr '.password') \
+    psql -h "$db.c47zrtfulzs6.us-west-2.rds.amazonaws.com" -p 5432 -d notion "$@"
+}
+
+dark() {
+  echo "dark" > ~/.config/theme
+  osascript -e 'tell app "System Events" to tell appearance preferences to set dark mode to true'
+  _notify_nvim_theme dark
+}
+
+light() {
+  echo "light" > ~/.config/theme
+  osascript -e 'tell app "System Events" to tell appearance preferences to set dark mode to false'
+  _notify_nvim_theme light
+}
+
+_notify_nvim_theme() {
+  local scheme
+  if [ "$1" = "dark" ]; then
+    scheme="everforest"
+  else
+    scheme="dawnfox"
+  fi
+  for sock in $(find "${TMPDIR:-/tmp}" -name 'nvim.*' -type s 2>/dev/null); do
+    nvim --server "$sock" --remote-send "<Cmd>colorscheme $scheme<CR>" </dev/null 2>/dev/null
+  done
+}
