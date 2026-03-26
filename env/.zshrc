@@ -27,8 +27,12 @@ source ~/powerlevel10k/powerlevel10k.zsh-theme
 export EDITOR="nvim"
 export VISUAL="nvim"
 
-# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
-[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+# Load p10k config matching current theme
+if [[ -f ~/.config/theme ]] && [[ "$(cat ~/.config/theme)" == "light" ]]; then
+  [[ ! -f ~/.p10k-light.zsh ]] || source ~/.p10k-light.zsh
+else
+  [[ ! -f ~/.p10k-dark.zsh ]] || source ~/.p10k-dark.zsh
+fi
 eval "$(direnv hook zsh)"
 export RIPGREP_CONFIG_PATH="/Users/nlorio/Documents/projects/notion-next/.ripgreprc"
 eval "$('/usr/local/bin/node' -r '/Users/nlorio/Documents/projects/notion-next/esbuild-runner.js' '/Users/nlorio/Documents/projects/notion-next/src/cli/main/notion.ts' completion --install)"
@@ -47,3 +51,5 @@ eval "$(${CARGO_HOME:-$HOME/.cargo}/bin/rv shell init zsh)"
 export ANDROID_HOME=/Users/nlorio/Library/Android/sdk
 export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
 export PATH="$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin"
+
+alias t3="n exec 25.8.2 npx t3"

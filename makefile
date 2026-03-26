@@ -60,9 +60,13 @@ link:
 	@ln -sfn $(REPO_DIR)/env/.zshrc $(HOME)/.zshrc
 	@ln -sfn $(REPO_DIR)/env/.zsh_profile $(HOME)/.zsh_profile
 	@ln -sfn $(REPO_DIR)/env/.zsh_functions $(HOME)/.zsh_functions
+	@ln -sfn $(REPO_DIR)/env/p10k-dark.zsh $(HOME)/.p10k-dark.zsh
+	@ln -sfn $(REPO_DIR)/env/p10k-light.zsh $(HOME)/.p10k-light.zsh
 	@echo "  ~/.zshrc -> env/.zshrc"
 	@echo "  ~/.zsh_profile -> env/.zsh_profile"
 	@echo "  ~/.zsh_functions -> env/.zsh_functions"
+	@echo "  ~/.p10k-dark.zsh -> env/p10k-dark.zsh"
+	@echo "  ~/.p10k-light.zsh -> env/p10k-light.zsh"
 
 	@# Tmux
 	@ln -sfn $(REPO_DIR)/env/.tmux.conf $(HOME)/.tmux.conf
@@ -98,6 +102,8 @@ unlink:
 	@rm -f $(HOME)/.zshrc
 	@rm -f $(HOME)/.zsh_profile
 	@rm -f $(HOME)/.zsh_functions
+	@rm -f $(HOME)/.p10k-dark.zsh
+	@rm -f $(HOME)/.p10k-light.zsh
 	@rm -f $(HOME)/.tmux.conf
 	@rm -f $(HOME)/.vimrc
 	@rm -f $(HOME)/.vim

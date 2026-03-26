@@ -9,8 +9,11 @@ window-padding-x = 10
 window-padding-y = 10
 window-decoration = true
 
-# Theme (follows macOS system appearance)
+# Theme (follows macOS system appearance by default)
 theme = light:Everforest Light Med,dark:Everforest Dark Medium
+
+# Local theme override (written by dark-term/light-term commands)
+config-file = ?~/.config/ghostty/theme-override
 
 # Cursor
 cursor-style = block

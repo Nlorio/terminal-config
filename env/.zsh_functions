@@ -8,16 +8,40 @@ function notion-rds-psql() {
     psql -h "$db.c47zrtfulzs6.us-west-2.rds.amazonaws.com" -p 5432 -d notion "$@"
 }
 
-dark() {
+dark-ui() {
   echo "dark" > ~/.config/theme
+  : > ~/.config/ghostty/theme-override
   osascript -e 'tell app "System Events" to tell appearance preferences to set dark mode to true'
+  source ~/.p10k-dark.zsh
   _notify_nvim_theme dark
 }
 
-light() {
+light-ui() {
   echo "light" > ~/.config/theme
+  : > ~/.config/ghostty/theme-override
   osascript -e 'tell app "System Events" to tell appearance preferences to set dark mode to false'
+  source ~/.p10k-light.zsh
   _notify_nvim_theme light
+}
+
+dark-term() {
+  echo "dark" > ~/.config/theme
+  echo "theme = Everforest Dark Medium" > ~/.config/ghostty/theme-override
+  _reload_ghostty
+  source ~/.p10k-dark.zsh
+  _notify_nvim_theme dark
+}
+
+light-term() {
+  echo "light" > ~/.config/theme
+  echo "theme = Everforest Light Med" > ~/.config/ghostty/theme-override
+  _reload_ghostty
+  source ~/.p10k-light.zsh
+  _notify_nvim_theme light
+}
+
+_reload_ghostty() {
+  osascript -e 'tell application "System Events" to keystroke "," using {command down, shift down}'
 }
 
 _notify_nvim_theme() {
@@ -27,7 +51,10 @@ _notify_nvim_theme() {
   else
     scheme="dawnfox"
   fi
-  for sock in $(find "${TMPDIR:-/tmp}" -name 'nvim.*' -type s 2>/dev/null); do
-    nvim --server "$sock" --remote-send "<Cmd>colorscheme $scheme<CR>" </dev/null 2>/dev/null
-  done
+  local nvim_dir="${TMPDIR:-/tmp}/nvim.$(whoami)"
+  if [ -d "$nvim_dir" ]; then
+    for sock in $(find "$nvim_dir" -type s 2>/dev/null); do
+      nvim --server "$sock" --remote-send "<Cmd>colorscheme $scheme<CR>" </dev/null 2>/dev/null
+    done
+  fi
 }

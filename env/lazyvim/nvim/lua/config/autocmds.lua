@@ -13,10 +13,10 @@ vim.api.nvim_create_autocmd("FocusGained", {
     local theme_file = vim.fn.expand("~/.config/theme")
     if vim.fn.filereadable(theme_file) == 1 then
       local mode = vim.fn.readfile(theme_file)[1]
-      if mode == "light" then
-        vim.cmd.colorscheme("dawnfox")
-      elseif mode == "dark" then
-        vim.cmd.colorscheme("everforest")
+      local theme = require("lib.theme")
+      local t = theme[mode]
+      if t and vim.g.colors_name ~= t.colorscheme then
+        theme.apply(mode)
       end
     end
   end,

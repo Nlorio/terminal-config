@@ -6,4 +6,11 @@
 -- vim.g.lazyvim_eslint_auto_format = true
 vim.g.lazyvim_picker = "fzf"
 
-vim.o.background = "dark"
+local theme = require("lib.theme")
+local theme_file = vim.fn.expand("~/.config/theme")
+if vim.fn.filereadable(theme_file) == 1 then
+  local mode = vim.fn.readfile(theme_file)[1]
+  if theme[mode] then
+    vim.o.background = theme[mode].background
+  end
+end

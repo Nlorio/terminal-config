@@ -7,10 +7,8 @@ vim.keymap.set("n", "<leader>uh", function()
 end, { desc = "Toggle Inlay Hints" })
 
 vim.keymap.set("n", "<leader>ut", function()
-  if vim.o.background == "dark" then
-    vim.cmd.colorscheme("dawnfox")
-  else
-    vim.o.background = "dark"
-    vim.cmd.colorscheme("everforest")
-  end
+  local theme = require("lib.theme")
+  local mode = vim.o.background == "dark" and "light" or "dark"
+  theme.apply(mode)
+  vim.fn.writefile({ mode }, vim.fn.expand("~/.config/theme"))
 end, { desc = "Toggle Light/Dark" })
