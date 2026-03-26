@@ -12,7 +12,6 @@ dark-ui() {
   echo "dark" > ~/.config/theme
   : > ~/.config/ghostty/theme-override
   osascript -e 'tell app "System Events" to tell appearance preferences to set dark mode to true'
-  source ~/.p10k-dark.zsh
   _notify_nvim_theme dark
 }
 
@@ -20,7 +19,6 @@ light-ui() {
   echo "light" > ~/.config/theme
   : > ~/.config/ghostty/theme-override
   osascript -e 'tell app "System Events" to tell appearance preferences to set dark mode to false'
-  source ~/.p10k-light.zsh
   _notify_nvim_theme light
 }
 
