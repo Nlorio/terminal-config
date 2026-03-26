@@ -1,7 +1,7 @@
 local M = {}
 
 M.dark = { colorscheme = "everforest", background = "dark" }
-M.light = { colorscheme = "dawnfox", background = "light" }
+M.light = { colorscheme = "gruvbox", background = "light" }
 
 function M.apply(mode)
   local t = M[mode]

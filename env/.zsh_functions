@@ -34,7 +34,7 @@ dark-term() {
 
 light-term() {
   echo "light" > ~/.config/theme
-  echo "theme = Everforest Light Med" > ~/.config/ghostty/theme-override
+  echo "theme = Gruvbox Light" > ~/.config/ghostty/theme-override
   _reload_ghostty
   source ~/.p10k-light.zsh
   _notify_nvim_theme light
@@ -49,7 +49,7 @@ _notify_nvim_theme() {
   if [ "$1" = "dark" ]; then
     scheme="everforest"
   else
-    scheme="dawnfox"
+    scheme="gruvbox"
   fi
   local nvim_dir="${TMPDIR:-/tmp}/nvim.$(whoami)"
   if [ -d "$nvim_dir" ]; then

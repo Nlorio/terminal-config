@@ -10,7 +10,7 @@ end
 
 return {
 	{ "sainnhe/everforest" },
-	{ "EdenEast/nightfox.nvim" },
+	{ "ellisonleao/gruvbox.nvim" },
 
 	{
 		"LazyVim/LazyVim",
