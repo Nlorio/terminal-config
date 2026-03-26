@@ -13,9 +13,9 @@ gwa() {
   tmux new-session -d -s "$branch" 2>/dev/null || true
 
 
-  # Add worktree
-  git branch "$branch" || true
-  git worktree add "$worktree_path" "$branch"
+  # Add worktree from latest origin/main
+  git fetch origin main
+  git worktree add "$worktree_path" -b "$branch" origin/main
 
   # Set path
   tmux attach -c "$worktree_path"
