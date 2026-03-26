@@ -43,16 +43,11 @@ _reload_ghostty() {
 }
 
 _notify_nvim_theme() {
-  local scheme
-  if [ "$1" = "dark" ]; then
-    scheme="everforest"
-  else
-    scheme="gruvbox"
-  fi
+  local mode="$1"
   local nvim_dir="${TMPDIR:-/tmp}/nvim.$(whoami)"
   if [ -d "$nvim_dir" ]; then
     for sock in $(find "$nvim_dir" -type s 2>/dev/null); do
-      nvim --server "$sock" --remote-send "<Cmd>colorscheme $scheme<CR>" </dev/null 2>/dev/null
+      nvim --server "$sock" --remote-send "<Cmd>lua require('lib.theme').apply('$mode')<CR>" </dev/null 2>/dev/null
     done
   fi
 }
