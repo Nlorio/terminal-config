@@ -131,7 +131,20 @@ gwrecover() {
       del_reply=${del_reply:-N}
 
       if [[ "$del_reply" =~ ^[Yy]$ ]]; then
-        gwr "$session_name"
+        # Inline deletion instead of gwr — we already have the correct
+        # branch name and worktree path, while gwr infers them from one arg.
+        if tmux has-session -t "$session_name" 2>/dev/null; then
+          tmux kill-session -t "$session_name"
+          echo "  Killed tmux session: $session_name"
+        fi
+        if [ -d "$worktree_path" ]; then
+          git worktree remove "$worktree_path" --force
+          echo "  Removed worktree: $worktree_path"
+        fi
+        if git show-ref --verify --quiet "refs/heads/$branch"; then
+          git branch -D "$branch"
+          echo "  Deleted branch: $branch"
+        fi
         deleted+=("$session_name")
       else
         echo "  — Skipped"
