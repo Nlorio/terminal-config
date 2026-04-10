@@ -1,18 +1,26 @@
 return {
-  "NeogitOrg/neogit",
-  lazy = true,
-  dependencies = {
-    "nvim-lua/plenary.nvim",         -- required
-    "sindrets/diffview.nvim",        -- optional - Diff integration
-
-    -- Only one of these is needed.
-    "nvim-telescope/telescope.nvim", -- optional
-    "ibhagwan/fzf-lua",              -- optional
-    "nvim-mini/mini.pick",           -- optional
-    "folke/snacks.nvim",             -- optional
+  -- Disable lazygit plugin to prevent conflicts with Neogit
+  {
+    "kdheepak/lazygit.nvim",
+    enabled = false,
   },
-  cmd = "Neogit",
-  keys = {
-    { "<leader>gg", "<cmd>Neogit<cr>", desc = "Show Neogit UI" }
-  }
+  -- Configure Neogit
+  {
+    "NeogitOrg/neogit",
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      "sindrets/diffview.nvim",
+      "nvim-telescope/telescope.nvim",
+    },
+    cmd = "Neogit",
+    opts = {
+      integrations = {
+        diffview = true,
+        telescope = true,
+      },
+    },
+    keys = {
+      { "<leader>gg", "<cmd>Neogit<cr>", desc = "Neogit" },
+    },
+  },
 }
