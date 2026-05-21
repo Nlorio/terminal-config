@@ -10,6 +10,7 @@ Personal terminal configuration for macOS. All dotfiles are symlinked to this re
 - **lazyvim** - Neovim distribution with LSP, debugging, and plugins
 - **tmux** - Terminal multiplexer with 256-color support
 - **vim** - Classic vim with pathogen plugins
+- **skills** - Shared Claude Code / Codex skills, symlinked into both tool dirs
 
 ## Prerequisites
 
@@ -71,6 +72,15 @@ ln -sfn ~/Documents/config/terminal-config/neofetch/config.conf ~/.config/neofet
 # Neofetch custom ASCII (requires sudo)
 sudo mkdir -p /etc/neofetch
 sudo ln -sfn ~/Documents/config/terminal-config/neofetch/duck-half.ansii /etc/neofetch/duck-half.ansii
+
+# Shared skills (Claude Code + Codex)
+mkdir -p ~/.claude/skills ~/.codex/skills
+for skill in ~/Documents/config/terminal-config/skills/*/; do
+  name=$(basename "$skill")
+  ln -sfn "$skill" ~/.claude/skills/"$name"
+  ln -sfn "$skill" ~/.codex/skills/"$name"
+done
+# Or equivalently: `make link-skills`
 ```
 
 ### 4. Configure Powerlevel10k
@@ -100,10 +110,13 @@ terminal-config/
 │   └── vim/
 │       ├── autoload/         # Pathogen
 │       └── bundle/           # Vim plugins (lightline)
-└── neofetch/
-    ├── config.conf           # Neofetch display config
-    ├── duck-half.ansii       # Custom ASCII art
-    └── neofetch              # Custom neofetch binary
+├── neofetch/
+│   ├── config.conf           # Neofetch display config
+│   ├── duck-half.ansii       # Custom ASCII art
+│   └── neofetch              # Custom neofetch binary
+└── skills/                   # Shared Claude Code / Codex skills
+    └── <skill-name>/
+        └── SKILL.md          # Frontmatter: name, description; body is the prompt
 ```
 
 ## Configuration Details
@@ -159,8 +172,51 @@ gwa feature-branch
 This will:
 1. Create a new tmux session named `feature-branch`
 2. Create a git worktree at `~/worktrees/feature-branch`
-3. Open 3 windows: main, secondary, and Claude Code
-4. Run `notion install` in the first window
+3. Run `notion install` in window 0
+4. Prompt for a **layout** (default or long-running) and an **AI assistant** (claude or codex)
+
+**Default layout** (3 windows):
+- Window 0: shell with `notion install`
+- Window 1: empty shell
+- Window 2: single AI assistant
+
+**Long-running layout** (4 windows, role-specialized agents):
+- Window 0: shell with `notion install`
+- Window 1: empty shell
+- Window 2 (`agents`): vertical split — `implementor` pane on the left, `researcher` pane on the right, both running the chosen AI assistant. Pane titles render via `pane-border-status top` on that window.
+- Window 3 (`review`): `adversarial` reviewer pane running the chosen AI assistant.
+- A persistent TODO file is created at `~/Documents/plans/worktree-todos/<branch>/TODO.md` and symlinked into the worktree as `WORKTREE-TODO.md` (git-ignored per-worktree). Created once per branch name; survives `gwr` so notes outlive the worktree.
+- Each agent is seeded with role context from `env/worktree-roles/{implementor,researcher,adversarial}.md`. The implementor runs as a long-running loop pulling items from the TODO list (read-only); the researcher never implements; the adversarial reviewer waits to be prompted, then appends gap items to the TODO list. Edit those files to tune behavior — changes take effect on the next `gwa` / `gwrecover`. Override the directory via `_GW_ROLES_DIR` if you keep your roles elsewhere.
+
+### `gwr` - Git Worktree Remove
+
+Counterpart to `gwa`. Kills the tmux session, removes the worktree, and deletes the branch:
+
+```bash
+gwr feature-branch
+```
+
+### `gwrecover` - Interactive Worktree Recovery
+
+Walks every existing worktree and offers to either recreate its tmux session (mirroring the `gwa` layout — prompts for layout and AI assistant per worktree) or delete the worktree and branch. Useful after a reboot that wiped tmux state. Deletions run asynchronously so the prompt loop stays snappy.
+
+## Shared Skills
+
+`skills/` holds Claude Code / Codex skills in the portable `<name>/SKILL.md` format. `make link-skills` symlinks each skill into both `~/.claude/skills/<name>` and `~/.codex/skills/<name>`, so editing the file in this repo immediately affects both tools.
+
+To add a new skill:
+
+1. `mkdir skills/<name>`
+2. Create `skills/<name>/SKILL.md` with frontmatter:
+   ```
+   ---
+   name: <name>
+   description: <one-line description>
+   ---
+   ```
+3. Run `make link-skills` to publish it to both tools (idempotent; picks up new dirs automatically).
+
+`make unlink-skills` removes only the symlinks this repo creates — `~/.codex/skills/.system/` and any externally-sourced skill directories (e.g. `~/.claude/skills/perf-review/`) are left alone.
 
 ## Notes
 

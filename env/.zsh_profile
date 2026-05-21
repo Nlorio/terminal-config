@@ -1,3 +1,110 @@
+# Directory holding per-role markdown context files for long-running worktree
+# agents (implementor.md / researcher.md / adversarial.md). Override
+# `_GW_ROLES_DIR` to point elsewhere if you keep your roles outside the repo.
+_GW_ROLES_DIR="${_GW_ROLES_DIR:-$HOME/Documents/config/terminal-config/env/worktree-roles}"
+
+# Persistent worktree TODO file location for a given branch. Single source of
+# truth for the path convention used by `_gw_create_worktree_todo` and
+# `_gw_create_ai_windows`.
+_gw_todo_path() {
+  echo "$HOME/Documents/plans/worktree-todos/$1/TODO.md"
+}
+
+# Send the chosen AI command to a tmux target, optionally seeding the agent
+# with a role file as system-level context (claude) or as the first user
+# message (codex, which has no system-prompt flag).
+#   $1 target  $2 ai_choice (c|x)  $3 role_file (optional)  $4 todo_file (optional)
+_gw_run_ai() {
+  local target="$1" ai="$2" role_file="${3:-}" todo_file="${4:-}"
+  local cmd
+  if [[ "$ai" =~ ^[Xx]$ ]]; then
+    cmd="codex --dangerously-bypass-approvals-and-sandbox"
+    if [ -n "$role_file" ]; then
+      cmd="$cmd \"\$(printf 'Your role for this session (worktree TODO: %s):\\n\\n' '${todo_file:-none}')\$(cat $role_file)\""
+    fi
+  else
+    cmd="claude --dangerously-skip-permissions"
+    if [ -n "$role_file" ]; then
+      cmd="$cmd --append-system-prompt \"\$(cat $role_file)\$(printf '\\n\\nWorktree TODO file: %s' '${todo_file:-none}')\""
+    fi
+  fi
+  tmux send-keys -t "$target" "$cmd" C-m
+}
+
+# Build the AI windows for a session based on layout choice.
+#   $1 session  $2 worktree_path  $3 ai_choice (c|x)  $4 layout (d|l)
+_gw_create_ai_windows() {
+  local session="$1" wt="$2" ai="$3" layout="$4"
+
+  if [[ "$layout" =~ ^[Ll]$ ]]; then
+    local todo
+    todo=$(_gw_todo_path "$session")
+
+    # Window 2 — agents (vertical split: implementor | researcher)
+    tmux new-window -t "$session:2" -c "$wt" -n "agents"
+    tmux set-window-option -t "$session:2" pane-border-status top
+    tmux select-pane -t "$session:2.0" -T "implementor"
+    tmux split-window -t "$session:2" -h -c "$wt"
+    tmux select-pane -t "$session:2.1" -T "researcher"
+    _gw_run_ai "$session:2.0" "$ai" "$_GW_ROLES_DIR/implementor.md" "$todo"
+    _gw_run_ai "$session:2.1" "$ai" "$_GW_ROLES_DIR/researcher.md" "$todo"
+
+    # Window 3 — adversarial reviewer
+    tmux new-window -t "$session:3" -c "$wt" -n "review"
+    tmux set-window-option -t "$session:3" pane-border-status top
+    tmux select-pane -t "$session:3.0" -T "adversarial"
+    _gw_run_ai "$session:3.0" "$ai" "$_GW_ROLES_DIR/adversarial.md" "$todo"
+  else
+    # Default — single AI window, no role priming
+    tmux new-window -t "$session:2" -c "$wt"
+    _gw_run_ai "$session:2" "$ai"
+  fi
+}
+
+# Create a persistent TODO file for a long-running worktree. No-op for the
+# default layout. Idempotent: never overwrites existing content. The real file
+# lives outside the worktree so `gwr` cannot delete it; a symlink inside the
+# worktree provides easy access and is ignored via the per-worktree exclude.
+#   $1 branch  $2 worktree_path  $3 layout (d|l)
+_gw_create_worktree_todo() {
+  local branch="$1" wt="$2" layout="$3"
+  [[ "$layout" =~ ^[Ll]$ ]] || return 0
+
+  local todo_file
+  todo_file=$(_gw_todo_path "$branch")
+  local todo_dir="${todo_file%/*}"
+  local link="$wt/WORKTREE-TODO.md"
+
+  mkdir -p "$todo_dir"
+
+  if [ ! -f "$todo_file" ]; then
+    cat > "$todo_file" <<EOF
+# $branch — Worktree TODO
+
+- Created: $(date '+%Y-%m-%d')
+- Branch: \`$branch\`
+- Worktree: \`$wt\`
+
+## Notes
+
+## Tasks
+
+- [ ]
+EOF
+    echo "  📝 Created persistent TODO: $todo_file"
+  else
+    echo "  📝 Re-attached existing TODO: $todo_file"
+  fi
+
+  ln -sfn "$todo_file" "$link"
+
+  local exclude
+  exclude=$(git -C "$wt" rev-parse --git-path info/exclude 2>/dev/null)
+  if [ -n "$exclude" ] && [ -f "$exclude" ] && ! grep -qxF "WORKTREE-TODO.md" "$exclude"; then
+    echo "WORKTREE-TODO.md" >> "$exclude"
+  fi
+}
+
 gwa() {
   if [ -z "$1" ]; then
     echo "Usage: gwa <branch-name>"
@@ -13,9 +120,16 @@ gwa() {
   tmux new-session -d -s "$branch" 2>/dev/null || true
 
 
-  # Add worktree from latest origin/main
-  git fetch origin main
-  git worktree add "$worktree_path" -b "$branch" origin/main
+  # Add worktree — adopt origin/$branch if it exists (sets upstream tracking
+  # automatically), otherwise branch from origin/main. Gitlinker and similar
+  # tools fall into an O(remote-branches) slow path without upstream set.
+  git fetch origin main "$branch" 2>/dev/null || git fetch origin main
+  if git rev-parse --verify --quiet "refs/remotes/origin/$branch" >/dev/null 2>&1; then
+    echo "Adopting existing remote branch origin/$branch"
+    git worktree add -b "$branch" "$worktree_path" "origin/$branch"
+  else
+    git worktree add "$worktree_path" -b "$branch" origin/main
+  fi
 
   # Set path
   tmux attach -c "$worktree_path"
@@ -29,9 +143,19 @@ gwa() {
   tmux new-window -t "$branch:1" -c "$worktree_path"
 
 
-  # Create third window and run claude
-  tmux new-window -t "$branch:2" -c "$worktree_path"
-  tmux send-keys -t "$branch:2" "claude --dangerously-skip-permissions" C-m
+  # Choose layout
+  printf "Layout: [d]efault or [l]ong-running? [d/l] "
+  read -r layout_choice </dev/tty
+  layout_choice=${layout_choice:-d}
+
+  # Choose AI assistant for this worktree
+  printf "AI assistant: [c]laude or code[x]? [c/x] "
+  read -r ai_choice </dev/tty
+  ai_choice=${ai_choice:-c}
+
+  # Create the persistent TODO first so the agents can read it on launch.
+  _gw_create_worktree_todo "$branch" "$worktree_path" "$layout_choice"
+  _gw_create_ai_windows    "$branch" "$worktree_path" "$ai_choice" "$layout_choice"
 
 
   # Set default directory for new windows in this session
@@ -78,6 +202,11 @@ gwr() {
     git branch -D "$branch"
     echo "Deleted branch: $branch"
   fi
+
+  # Persistent TODO file (long-running layout) lives outside the worktree and
+  # intentionally survives removal.
+  local todo_file="$HOME/Documents/plans/worktree-todos/$branch/TODO.md"
+  [ -f "$todo_file" ] && echo "Persistent TODO retained: $todo_file"
 }
 
 gwrecover() {
@@ -101,6 +230,16 @@ gwrecover() {
   echo "Found worktrees to recover:\n"
 
   while IFS=$'\t' read -r worktree_path branch; do
+    # Heal missing upstream tracking. Without it, tools that resolve "is this
+    # rev on a remote?" fall back to `git branch -r --contains`, which is
+    # O(remote-branches) and takes minutes in repos with tens of thousands.
+    if ! git -C "$worktree_path" rev-parse --abbrev-ref "$branch@{u}" >/dev/null 2>&1; then
+      if git -C "$worktree_path" rev-parse --verify --quiet "refs/remotes/origin/$branch" >/dev/null 2>&1; then
+        git -C "$worktree_path" branch --set-upstream-to="origin/$branch" "$branch" >/dev/null 2>&1 \
+          && echo "  ✓ Set upstream: $branch → origin/$branch"
+      fi
+    fi
+
     local session_name=$(basename "$worktree_path")
 
     # Skip if tmux session already exists
@@ -116,11 +255,22 @@ gwrecover() {
     reply=${reply:-Y}
 
     if [[ "$reply" =~ ^[Yy]$ ]]; then
-      # Recreate tmux session (mirrors gwa layout)
+      # Choose AI assistant
+      printf "  AI assistant: [c]laude or code[x]? [c/x] "
+      read -r ai_choice </dev/tty
+      ai_choice=${ai_choice:-c}
+
+      # Choose layout
+      printf "  Layout: [d]efault or [l]ong-running? [d/l] "
+      read -r layout_choice </dev/tty
+      layout_choice=${layout_choice:-d}
+
+      # Recreate tmux session (mirrors gwa layout). Create the persistent
+      # TODO first so the agents can read it on launch.
       tmux new-session -d -s "$session_name" -c "$worktree_path"
       tmux new-window -t "$session_name:1" -c "$worktree_path"
-      tmux new-window -t "$session_name:2" -c "$worktree_path"
-      tmux send-keys -t "$session_name:2" "claude --dangerously-skip-permissions" C-m
+      _gw_create_worktree_todo "$session_name" "$worktree_path" "$layout_choice"
+      _gw_create_ai_windows    "$session_name" "$worktree_path" "$ai_choice" "$layout_choice"
       tmux set-option -t "$session_name" default-command "cd $worktree_path; exec \$SHELL"
       tmux select-window -t "$session_name:0"
       echo "  ✓ Created session: $session_name"
@@ -137,14 +287,18 @@ gwrecover() {
           tmux kill-session -t "$session_name"
           echo "  Killed tmux session: $session_name"
         fi
-        if [ -d "$worktree_path" ]; then
-          git worktree remove "$worktree_path" --force
-          echo "  Removed worktree: $worktree_path"
-        fi
-        if git show-ref --verify --quiet "refs/heads/$branch"; then
-          git branch -D "$branch"
-          echo "  Deleted branch: $branch"
-        fi
+        # Detach the slow parts (worktree rm + branch delete) so the
+        # interactive loop moves on immediately and the function returns
+        # without waiting on them at the end.
+        (
+          if [ -d "$worktree_path" ]; then
+            git worktree remove "$worktree_path" --force
+          fi
+          if git show-ref --verify --quiet "refs/heads/$branch"; then
+            git branch -D "$branch"
+          fi
+        ) >/dev/null 2>&1 &!
+        echo "  ⏳ Queued deletion: $session_name"
         deleted+=("$session_name")
       else
         echo "  — Skipped"
