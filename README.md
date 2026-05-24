@@ -96,7 +96,7 @@ terminal-config/
 ├── README.md
 ├── env/
 │   ├── .tmux.conf            # Tmux configuration
-│   ├── .zsh_profile          # Zsh functions (gwa)
+│   ├── .zsh_profile          # Zsh functions (gwa, gwb, gwrecover, gwbrecover)
 │   ├── .zshrc                # Zsh configuration
 │   ├── ghostty/
 │   │   └── config            # Ghostty terminal config
@@ -199,6 +199,38 @@ gwr feature-branch
 ### `gwrecover` - Interactive Worktree Recovery
 
 Walks every existing worktree and offers to either recreate its tmux session (mirroring the `gwa` layout — prompts for layout and AI assistant per worktree) or delete the worktree and branch. Useful after a reboot that wiped tmux state. Deletions run asynchronously so the prompt loop stays snappy.
+
+### `gwb` - Boxy Workstream Automation
+
+Parallel to `gwa` but for **Notion Boxy** (cloud dev environment). Every pane in the resulting tmux session SSHes into the boxy via `notion boxy ssh`:
+
+```bash
+gwb my-boxy
+```
+
+This will:
+1. Detect whether boxy `my-boxy` exists already. If not, prompt for **image flavor** ([n]otion-next / [m]ail / [d]ata) and run `notion boxy create my-boxy --branch my-boxy [--withMail|--withData] --detached`.
+2. Prompt for layout (`[d]efault` / `[l]ong-running`) and AI assistant (`[c]laude` / `code[x]`).
+3. Stage role files and a launcher script on the boxy at `~/worktree-roles/`. For long-running layout, also create `~/worktree-todos/<name>/TODO.md` on the boxy, symlinked from `~/notion-next/WORKTREE-TODO.md` (added to `.git/info/exclude`).
+4. Build a local tmux session named `boxy-<name>` (the `boxy-` prefix keeps these grouped separately from worktree sessions in `C-b s`):
+   - Window 0 `main`: SSH'd in, `cd ~/notion-next`
+   - Window 1 `shell`: secondary remote shell
+   - **Default**: Window 2 `ai` runs the chosen AI with no role priming
+   - **Long-running**: Window 2 `agents` (implementor + researcher split) and Window 3 `review` (adversarial), each launched via `~/worktree-roles/_launch.sh <role> <ai> <todo>` on the boxy
+
+Role files are shipped to the boxy by `scp` at session creation, so local edits in `env/worktree-roles/` propagate on the next `gwb`. The TODO file lives on the boxy filesystem (not locally), so notes persist across local tmux state but are tied to the lifetime of the boxy itself.
+
+### `gwbr` - Boxy Workstream Remove
+
+Counterpart to `gwb`. Kills the local tmux session, then prompts before running `notion boxy destroy <name>` (irreversible):
+
+```bash
+gwbr my-boxy
+```
+
+### `gwbrecover` - Interactive Boxy Recovery
+
+Walks `notion boxy ls` and, for each remote boxy without a corresponding local `boxy-<name>` tmux session, offers to recreate the session (re-staging role files and TODO) or destroy the boxy. Destroys run asynchronously to keep the prompt loop snappy.
 
 ## Shared Skills
 
