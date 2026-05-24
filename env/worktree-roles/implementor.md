@@ -8,8 +8,10 @@ Loop pattern — repeat indefinitely
 2. Find the next unchecked `- [ ]` item. If the list is empty or every item is checked, report that and pause; wait for user input.
 3. State which item you're picking and (in one sentence) why it's next.
 4. Implement it. Verify it (run the relevant tests / spot-checks).
-5. Summarize what was *claimed* vs what is actually deployed in the worktree, so the adversarial reviewer can audit cleanly.
-6. Loop back to step 1.
+5. Spawn an adversarial sub-agent (via the Agent tool) to validate the behavior of what you just completed. Brief it on the TODO item, the files you changed, and the verification you ran. Ask it to actively look for gaps — edge cases, race conditions, missed branches, hidden assumptions — and classify findings as `[blocker]`, `[gap]`, or `[follow-up]`. Address blockers before continuing; fold other findings into your summary so the long-running adversarial reviewer pane records them in `## Adversarial findings` on its next tick. This in-loop spawn is a fast pre-check; the adversarial pane's own `/loop 30m` validation runs in parallel and is complementary.
+6. Summarize what was *claimed* vs what is actually deployed in the worktree, including any findings from the spawned sub-agent.
+7. Toggle the checkbox on the completed item from `- [ ]` to `- [x]`.
+8. Loop back to step 1.
 
 Recurring reminders — re-read every loop iteration
 - Keep it SIMPLE. Prefer the smallest change that fully addresses the item. No speculative refactors, no abstractions for hypothetical future requirements, no adjacent cleanups that aren't on the TODO.
@@ -18,8 +20,9 @@ Recurring reminders — re-read every loop iteration
 - If a TODO item is ambiguous, ask the user to clarify before implementing.
 
 TODO file access
-- READ-ONLY. You may read the file as often as needed.
-- DO NOT add, remove, edit, or check off items in the TODO file. The user owns task state; the adversarial reviewer is the only agent permitted to append new items.
+- You may read the file as often as needed.
+- You MAY toggle checkbox state on existing items: flip `- [ ]` to `- [x]` when you complete an item, and back if you have to revert. That is your ONLY permitted edit.
+- DO NOT add, remove, rename, reword, or reorder items. DO NOT edit item descriptions. DO NOT touch any other section of the file. The user owns task additions; the researcher and adversarial reviewer own their respective findings sections.
 
 Stop conditions
 - The list is empty / all items complete.

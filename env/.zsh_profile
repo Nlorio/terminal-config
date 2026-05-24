@@ -40,23 +40,28 @@ _gw_create_ai_windows() {
     local todo
     todo=$(_gw_todo_path "$session")
 
-    # Window 2 — agents (vertical split: implementor | researcher)
+    # Window 2 — agents (vertical split: implementor | researcher).
+    # Labels go in the @role per-pane user option (durable — claude's OSC
+    # title escapes can't overwrite it) and the border format renders only
+    # that, so the displayed label is never branch-prefixed.
     tmux new-window -t "$session:2" -c "$wt" -n "agents"
     tmux set-window-option -t "$session:2" pane-border-status top
-    tmux select-pane -t "$session:2.0" -T "implementor"
+    tmux set-window-option -t "$session:2" pane-border-format " #{@role} "
     tmux split-window -t "$session:2" -h -c "$wt"
-    tmux select-pane -t "$session:2.1" -T "researcher"
+    tmux set-option -p -t "$session:2.0" @role "implementor"
+    tmux set-option -p -t "$session:2.1" @role "researcher"
     _gw_run_ai "$session:2.0" "$ai" "$_GW_ROLES_DIR/implementor.md" "$todo"
     _gw_run_ai "$session:2.1" "$ai" "$_GW_ROLES_DIR/researcher.md" "$todo"
 
     # Window 3 — adversarial reviewer
     tmux new-window -t "$session:3" -c "$wt" -n "review"
     tmux set-window-option -t "$session:3" pane-border-status top
-    tmux select-pane -t "$session:3.0" -T "adversarial"
+    tmux set-window-option -t "$session:3" pane-border-format " #{@role} "
+    tmux set-option -p -t "$session:3.0" @role "adversarial"
     _gw_run_ai "$session:3.0" "$ai" "$_GW_ROLES_DIR/adversarial.md" "$todo"
   else
     # Default — single AI window, no role priming
-    tmux new-window -t "$session:2" -c "$wt"
+    tmux new-window -t "$session:2" -c "$wt" -n "ai"
     _gw_run_ai "$session:2" "$ai"
   fi
 }
@@ -117,7 +122,7 @@ gwa() {
 
 
   # Create a new tmux session with the branch name (detached)
-  tmux new-session -d -s "$branch" 2>/dev/null || true
+  tmux new-session -d -s "$branch" -n "main" 2>/dev/null || true
 
 
   # Add worktree — adopt origin/$branch if it exists (sets upstream tracking
@@ -140,7 +145,7 @@ gwa() {
 
 
   # Create second window
-  tmux new-window -t "$branch:1" -c "$worktree_path"
+  tmux new-window -t "$branch:1" -c "$worktree_path" -n "shell"
 
 
   # Choose layout
@@ -209,7 +214,31 @@ gwr() {
   [ -f "$todo_file" ] && echo "Persistent TODO retained: $todo_file"
 }
 
+# Ensure the three primary tmux sessions exist. Numeric prefixes (1-, 2-, 3-)
+# sort above branch-named worktree sessions in `C-b s` and `tmux ls`, so
+# primaries appear on top. Idempotent — safe to re-run.
+_gw_ensure_primaries() {
+  local primaries=("1-main" "2-exploration" "3-investigation")
+  local created=()
+  local s
+  for s in "${primaries[@]}"; do
+    if ! tmux has-session -t "$s" 2>/dev/null; then
+      tmux new-session -d -s "$s" -n "main" -c "$HOME"
+      created+=("$s")
+    fi
+  done
+  if [ ${#created[@]} -gt 0 ]; then
+    echo "Bootstrapped primary sessions: ${created[*]}"
+  else
+    echo "Primary sessions already exist: ${primaries[*]}"
+  fi
+}
+
 gwrecover() {
+  # Spawn primaries first so they sit above worktree sessions in `C-b s`.
+  _gw_ensure_primaries
+  echo ""
+
   local created=()
   local deleted=()
   local skipped=()
@@ -267,8 +296,8 @@ gwrecover() {
 
       # Recreate tmux session (mirrors gwa layout). Create the persistent
       # TODO first so the agents can read it on launch.
-      tmux new-session -d -s "$session_name" -c "$worktree_path"
-      tmux new-window -t "$session_name:1" -c "$worktree_path"
+      tmux new-session -d -s "$session_name" -c "$worktree_path" -n "main"
+      tmux new-window -t "$session_name:1" -c "$worktree_path" -n "shell"
       _gw_create_worktree_todo "$session_name" "$worktree_path" "$layout_choice"
       _gw_create_ai_windows    "$session_name" "$worktree_path" "$ai_choice" "$layout_choice"
       tmux set-option -t "$session_name" default-command "cd $worktree_path; exec \$SHELL"
