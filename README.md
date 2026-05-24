@@ -202,7 +202,7 @@ Walks every existing worktree and offers to either recreate its tmux session (mi
 
 ### `gwb` - Boxy Workstream Automation
 
-Parallel to `gwa` but for **Notion Boxy** (cloud dev environment). Every pane in the resulting tmux session SSHes into the boxy via `notion boxy ssh`:
+Parallel to `gwa` but for **Notion Boxy** (cloud dev environment). The local tmux session has a single window that SSHes into the boxy and attaches to a *nested remote tmux session* on the boxy itself — so the agent panes survive local tmux death, SSH drops, and laptop sleep:
 
 ```bash
 gwb my-boxy
@@ -211,14 +211,18 @@ gwb my-boxy
 This will:
 1. Detect whether boxy `my-boxy` exists already. If not, prompt for **image flavor** ([n]otion-next / [m]ail / [d]ata) and run `notion boxy create my-boxy --branch my-boxy [--withMail|--withData] --detached`.
 2. Prompt for layout (`[d]efault` / `[l]ong-running`) and AI assistant (`[c]laude` / `code[x]`).
-3. Stage role files and a launcher script on the boxy at `~/worktree-roles/`. For long-running layout, also create `~/worktree-todos/<name>/TODO.md` on the boxy, symlinked from `~/notion-next/WORKTREE-TODO.md` (added to `.git/info/exclude`).
-4. Build a local tmux session named `boxy-<name>` (the `boxy-` prefix keeps these grouped separately from worktree sessions in `C-b s`):
-   - Window 0 `main`: SSH'd in, `cd ~/notion-next`
-   - Window 1 `shell`: secondary remote shell
+3. Stage role files, an AI launcher script, and a tmux setup script on the boxy at `~/worktree-roles/`. For long-running layout, also create `~/worktree-todos/<name>/TODO.md` on the boxy, symlinked from `~/notion-next/WORKTREE-TODO.md` (added to `.git/info/exclude`).
+4. Create a single-window local tmux session named `boxy-<name>` (prefix `boxy-` so it sorts separately in `C-b s`). That window SSHes into the boxy, then runs `~/worktree-roles/_setup_tmux.sh` which idempotently builds a *remote* tmux session — also named `boxy-<name>` — on the boxy with the real layout:
+   - Window 0 `main`: shell in `~/notion-next`
+   - Window 1 `shell`: extra remote shell
    - **Default**: Window 2 `ai` runs the chosen AI with no role priming
-   - **Long-running**: Window 2 `agents` (implementor + researcher split) and Window 3 `review` (adversarial), each launched via `~/worktree-roles/_launch.sh <role> <ai> <todo>` on the boxy
+   - **Long-running**: Window 2 `agents` (implementor + researcher split, role-labeled pane borders) and Window 3 `review` (adversarial), each launched via `~/worktree-roles/_launch.sh <role> <ai> <todo>`
 
-Role files are shipped to the boxy by `scp` at session creation, so local edits in `env/worktree-roles/` propagate on the next `gwb`. The TODO file lives on the boxy filesystem (not locally), so notes persist across local tmux state but are tied to the lifetime of the boxy itself.
+**Nested tmux ergonomics**: the inner (remote) tmux uses prefix `C-a` so it doesn't fight the outer's `C-b`. Type `C-a C-a` to send a literal `C-a` (e.g. shell start-of-line). The inner session also has an orange status bar so the nesting level is obvious at a glance.
+
+**Persistence**: closing your laptop drops the SSH but the remote tmux + agents keep running. Re-running `gwb <name>` rebuilds the local SSH wrapper and re-attaches to the same remote tmux. You can also reconnect from any machine via `notion boxy ssh <name>` then `tmux attach -t boxy-<name>`.
+
+Role files are shipped to the boxy by `scp` at session creation, so local edits in `env/worktree-roles/` propagate on the next `gwb`. The TODO file lives on the boxy filesystem (not locally), so notes are tied to the lifetime of the boxy itself.
 
 ### `gwbr` - Boxy Workstream Remove
 
