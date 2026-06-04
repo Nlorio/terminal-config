@@ -615,6 +615,19 @@ gwrecover() {
 
     local session_name=$(basename "$worktree_path")
 
+    # The three primary workstreams (main / exploration / investigation) are
+    # always (re)created by _gw_ensure_primaries above as 1-main / 2-exploration
+    # / 3-investigation. Skip them here so the loop neither prompts for them nor
+    # spawns a duplicate bare session (e.g. `main` next to `1-main`). Strip an
+    # optional `N-` prefix so prefixed worktree names match too.
+    case "${session_name#[0-9]-}" in
+      main|exploration|investigation)
+        echo "  $session_name ($branch) — primary workstream, ensured above, skipping"
+        skipped+=("$session_name")
+        continue
+        ;;
+    esac
+
     # Skip if tmux session already exists
     if tmux has-session -t "$session_name" 2>/dev/null; then
       echo "  $session_name ($branch) — session already exists, skipping"
