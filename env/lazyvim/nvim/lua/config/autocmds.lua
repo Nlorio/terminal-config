@@ -10,14 +10,13 @@
 vim.api.nvim_create_autocmd("FocusGained", {
   group = vim.api.nvim_create_augroup("theme_sync", { clear = true }),
   callback = function()
-    local theme_file = vim.fn.expand("~/.config/theme")
-    if vim.fn.filereadable(theme_file) == 1 then
-      local mode = vim.fn.readfile(theme_file)[1]
-      local theme = require("lib.theme")
-      local t = theme[mode]
-      if t and vim.g.colors_name ~= t.colorscheme then
-        theme.apply(mode)
-      end
+    local theme = require("lib.theme")
+    local mode = theme.current_mode()
+    local t = mode and theme[mode]
+    -- Re-apply when either the colorscheme or the background drifted, so a pure
+    -- background flip (same colorscheme, e.g. melange) still re-syncs.
+    if t and (vim.g.colors_name ~= t.colorscheme or vim.o.background ~= t.background) then
+      theme.apply(mode)
     end
   end,
 })

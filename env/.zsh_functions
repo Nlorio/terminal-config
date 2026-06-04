@@ -23,10 +23,7 @@ dark-term() {
 }
 
 light-term() {
-  echo "light" > ~/.config/theme
-  echo "theme = Gruvbox Light" > ~/.config/ghostty/theme-override
-  _reload_ghostty
-  source ~/.p10k-light.zsh
+  # Switch only Neovim to light; leave the terminal (Ghostty + prompt) on tiki.
   _notify_nvim_theme light
 }
 
@@ -36,6 +33,9 @@ _reload_ghostty() {
 
 _notify_nvim_theme() {
   local mode="$1"
+  # Neovim keeps its own theme state (separate from the terminal's ~/.config/theme)
+  # so new nvim windows match, even when only the editor was switched.
+  echo "$mode" > ~/.config/theme-nvim
   local nvim_dir="${TMPDIR:-/tmp}/nvim.$(whoami)"
   if [ -d "$nvim_dir" ]; then
     for sock in $(find "$nvim_dir" -type s 2>/dev/null); do

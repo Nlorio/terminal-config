@@ -154,16 +154,24 @@ stay in a stable, predictable order.
 
 ## Theme Switching
 
-A single source of truth — `~/.config/theme` (`dark` or `light`) — keeps Ghostty,
-Powerlevel10k, and Neovim in sync:
+The terminal and Neovim track their themes separately so the editor can be flipped
+without disturbing the terminal:
 
-- **Shell**: `dark-ui` / `light-ui` flip the macOS system appearance (Ghostty
-  follows it automatically); `dark-term` / `light-term` set the terminal theme
-  directly via Ghostty's override file without touching system appearance. Both
-  reload the running p10k prompt and notify any open Neovim instances.
-- **Neovim**: `<leader>ut` toggles light/dark, persists the choice to
-  `~/.config/theme`, and re-applies on focus so external changes sync in.
-- **Prompt**: `.zshrc` sources `~/.p10k-dark.zsh` or `~/.p10k-light.zsh` based on
+- `~/.config/theme` (`dark` / `light`) drives the **terminal** — Ghostty + Powerlevel10k.
+- `~/.config/theme-nvim` (`dark` / `light`) drives **Neovim**; it falls back to
+  `~/.config/theme` when absent.
+
+Commands:
+
+- **`dark-ui` / `light-ui`** — flip the macOS system appearance (Ghostty follows it
+  automatically) and sync the prompt and Neovim. Whole-UI switch.
+- **`dark-term`** — reset everything to dark: Ghostty (tiki), the running p10k
+  prompt, and Neovim.
+- **`light-term`** — switch **only Neovim** to light; the terminal (Ghostty + prompt)
+  stays on tiki. Useful for a light editor over a dark terminal.
+- **Neovim `<leader>ut`** — toggle light/dark, persist to `~/.config/theme-nvim`,
+  and re-apply on focus so external changes sync in.
+- **Prompt** — `.zshrc` sources `~/.p10k-dark.zsh` or `~/.p10k-light.zsh` based on
   `~/.config/theme` at startup.
 
 ## Custom Functions

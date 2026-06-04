@@ -10,5 +10,5 @@ vim.keymap.set("n", "<leader>ut", function()
   local theme = require("lib.theme")
   local mode = vim.o.background == "dark" and "light" or "dark"
   theme.apply(mode)
-  vim.fn.writefile({ mode }, vim.fn.expand("~/.config/theme"))
+  theme.persist(mode)
 end, { desc = "Toggle Light/Dark" })

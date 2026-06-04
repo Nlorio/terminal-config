@@ -7,10 +7,7 @@
 vim.g.lazyvim_picker = "fzf"
 
 local theme = require("lib.theme")
-local theme_file = vim.fn.expand("~/.config/theme")
-if vim.fn.filereadable(theme_file) == 1 then
-  local mode = vim.fn.readfile(theme_file)[1]
-  if theme[mode] then
-    vim.o.background = theme[mode].background
-  end
+local mode = theme.current_mode()
+if mode then
+  vim.o.background = theme[mode].background
 end
