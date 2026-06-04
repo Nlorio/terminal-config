@@ -4,50 +4,42 @@ gwa() {
     return 1
   fi
 
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+    echo "gwa: not inside a git repository"
+    return 1
+  }
+  local repo_name
+  repo_name="$(basename "$repo_root")"
 
   local branch="$1"
-  local worktree_path="$HOME/worktrees/$branch"
+  local worktree_path="$HOME/worktrees/$repo_name/$branch"
 
+  # Create a new tmux session named after the branch (detached)
+  tmux new-session -d -s "$branch" -c "$worktree_path" 2>/dev/null || true
 
-  # Create a new tmux session with the branch name (detached)
-  tmux new-session -d -s "$branch" 2>/dev/null || true
+  # Add worktree (create branch if it doesn't already exist)
+  git -C "$repo_root" branch "$branch" 2>/dev/null || true
+  git -C "$repo_root" worktree add "$worktree_path" "$branch" || return 1
 
-
-  # Add worktree
-  git branch "$branch" || true
-  git worktree add "$worktree_path" "$branch"
-
-  # Set path
-  tmux attach -c "$worktree_path"
-
-  # Send commands to the first window of the new tmux session
+  # Window 0: working shell in the worktree
   tmux send-keys -t "$branch:0" "cd $worktree_path" C-m
-  tmux send-keys -t "$branch:0" "notion install" C-m
 
-
-  # Create second window
+  # Window 1: second working shell
   tmux new-window -t "$branch:1" -c "$worktree_path"
 
-
-  # Create third window and run claude
+  # Window 2: claude
   tmux new-window -t "$branch:2" -c "$worktree_path"
   tmux send-keys -t "$branch:2" "claude --dangerously-skip-permissions" C-m
 
-
-  # Set default directory for new windows in this session
+  # Default directory for new windows in this session
   tmux set-option -t "$branch" default-command "cd $worktree_path; exec \$SHELL"
 
-
-  # Switch back to the first window
   tmux select-window -t "$branch:0"
 
-
-  # Switch to the new session
   if [ -n "$TMUX" ]; then
-    # We're inside tmux, so use switch-client
     tmux switch-client -t "$branch"
   else
-    # We're not in tmux, so attach
     tmux attach-session -t "$branch"
   fi
 }
@@ -58,8 +50,16 @@ gwr() {
     return 1
   fi
 
+  local repo_root
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+    echo "gwr: not inside a git repository"
+    return 1
+  }
+  local repo_name
+  repo_name="$(basename "$repo_root")"
+
   local branch="$1"
-  local worktree_path="$HOME/worktrees/$branch"
+  local worktree_path="$HOME/worktrees/$repo_name/$branch"
 
   # Kill tmux session if it exists
   if tmux has-session -t "$branch" 2>/dev/null; then
@@ -69,13 +69,13 @@ gwr() {
 
   # Remove worktree if it exists
   if [ -d "$worktree_path" ]; then
-    git worktree remove "$worktree_path" --force
+    git -C "$repo_root" worktree remove "$worktree_path" --force
     echo "Removed worktree: $worktree_path"
   fi
 
   # Delete branch if it exists
-  if git show-ref --verify --quiet "refs/heads/$branch"; then
-    git branch -D "$branch"
+  if git -C "$repo_root" show-ref --verify --quiet "refs/heads/$branch"; then
+    git -C "$repo_root" branch -D "$branch"
     echo "Deleted branch: $branch"
   fi
 }
