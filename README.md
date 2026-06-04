@@ -6,7 +6,7 @@ Personal terminal configuration for macOS. All dotfiles are symlinked to this re
 
 - **neofetch** - System info display with custom duck ASCII art
 - **zsh** - Shell with Powerlevel10k theme and custom functions
-- **ghostty** - GPU-accelerated terminal emulator (Everforest theme)
+- **ghostty** - GPU-accelerated terminal emulator (light/dark theme switching)
 - **lazyvim** - Neovim distribution with LSP, debugging, and plugins
 - **tmux** - Terminal multiplexer with 256-color support
 - **vim** - Classic vim with pathogen plugins
@@ -86,8 +86,11 @@ terminal-config/
 ├── README.md
 ├── env/
 │   ├── .tmux.conf            # Tmux configuration
-│   ├── .zsh_profile          # Zsh functions (gwa)
+│   ├── .zsh_profile          # Worktree functions (gwa, gwr, gwrecover)
+│   ├── .zsh_functions        # Theme-switch functions (dark/light-ui, dark/light-term)
 │   ├── .zshrc                # Zsh configuration
+│   ├── p10k-dark.zsh         # Powerlevel10k config (dark)
+│   ├── p10k-light.zsh        # Powerlevel10k config (light)
 │   ├── ghostty/
 │   │   └── config            # Ghostty terminal config
 │   ├── lazyvim/
@@ -122,17 +125,18 @@ Custom configuration displaying system info with duck ASCII art. The custom ASCI
 
 Configured with:
 - JetBrainsMono Nerd Font
-- Everforest Dark color scheme (matches LazyVim)
+- Light/dark theme that follows macOS system appearance: `tiki-love-dark` (dark) and `Gruvbox Light` (light)
+- A local override file (`~/.config/ghostty/theme-override`) written by the `dark-term`/`light-term` shell commands
 - Block cursor, copy-on-select
 
 ### LazyVim
 
 Full Neovim distribution with:
-- **Colorscheme**: Everforest
-- **Picker**: fzf
+- **Colorscheme**: Everforest (dark) / Gruvbox (light), driven by `~/.config/theme`
+- **Picker**: fzf (with `bat` preview)
 - **Extras**: TypeScript, Docker, Markdown, JSON support
-- **Plugins**: Claude Code integration, git-blame, DAP debugging
-- **Keymaps**: `<leader>ac` to toggle Claude Code
+- **Plugins**: Claude Code integration, Neogit + Diffview, oxlint, PlantUML preview, git-blame, DAP debugging
+- **Keymaps**: `<leader>ac` to toggle Claude Code, `<leader>ut` to toggle light/dark
 
 ### Vim
 
@@ -144,7 +148,23 @@ Classic vim setup with:
 
 ### Tmux
 
-Minimal config with 256-color terminal support.
+Minimal config with 256-color terminal support. The session picker (`<prefix> s`)
+is sorted by name rather than by activity time, so numeric-prefixed sessions
+stay in a stable, predictable order.
+
+## Theme Switching
+
+A single source of truth — `~/.config/theme` (`dark` or `light`) — keeps Ghostty,
+Powerlevel10k, and Neovim in sync:
+
+- **Shell**: `dark-ui` / `light-ui` flip the macOS system appearance (Ghostty
+  follows it automatically); `dark-term` / `light-term` set the terminal theme
+  directly via Ghostty's override file without touching system appearance. Both
+  reload the running p10k prompt and notify any open Neovim instances.
+- **Neovim**: `<leader>ut` toggles light/dark, persists the choice to
+  `~/.config/theme`, and re-applies on focus so external changes sync in.
+- **Prompt**: `.zshrc` sources `~/.p10k-dark.zsh` or `~/.p10k-light.zsh` based on
+  `~/.config/theme` at startup.
 
 ## Custom Functions
 
@@ -158,9 +178,28 @@ gwa feature-branch
 
 This will:
 1. Create a new tmux session named `feature-branch`
-2. Create a git worktree at `~/worktrees/feature-branch`
-3. Open 3 windows: main, secondary, and Claude Code
-4. Run `notion install` in the first window
+2. Create a git worktree at `~/worktrees/<repo>/feature-branch`
+3. Open 3 windows: main shell, secondary shell, and Claude Code
+
+### `gwr` - Git Worktree Remove
+
+Counterpart to `gwa`. Kills the tmux session, removes the worktree, and deletes
+the branch:
+
+```bash
+gwr feature-branch
+```
+
+### `gwrecover` - Interactive Worktree Recovery
+
+Walks every existing worktree and offers to either recreate its tmux session
+(mirroring the `gwa` layout) or delete the worktree and branch. Useful after a
+reboot or `tmux kill-server` that wiped tmux state while the worktrees on disk
+survived.
+
+```bash
+gwrecover
+```
 
 ## Notes
 
