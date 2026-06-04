@@ -79,3 +79,91 @@ gwr() {
     echo "Deleted branch: $branch"
   fi
 }
+
+# gwrecover — interactively rebuild (or delete) tmux sessions for existing
+# worktrees. Useful after a reboot or `tmux kill-server`, where the worktrees
+# on disk survive but their sessions are gone. Mirrors gwa's window layout.
+gwrecover() {
+  local created=()
+  local deleted=()
+  local skipped=()
+
+  # Get worktrees with their branches, skip the first (main repo)
+  # Format: worktree_path<TAB>branch_name
+  local worktrees
+  worktrees=$(git worktree list --porcelain | awk '
+    /^worktree /{ wt=$2 }
+    /^branch /{ sub("refs/heads/","",$2); print wt "\t" $2 }
+  ' | tail -n +2)
+
+  if [ -z "$worktrees" ]; then
+    echo "No worktrees found to recover."
+    return 0
+  fi
+
+  echo "Found worktrees to recover:\n"
+
+  while IFS=$'\t' read -r worktree_path branch; do
+    local session_name=$(basename "$worktree_path")
+
+    # Skip if tmux session already exists
+    if tmux has-session -t "$session_name" 2>/dev/null; then
+      echo "  $session_name ($branch) — session already exists, skipping"
+      skipped+=("$session_name")
+      continue
+    fi
+
+    printf "  %s [branch: %s] (%s)\n" "$session_name" "$branch" "$worktree_path"
+    printf "  Create tmux session? [Y/n] "
+    read -r reply </dev/tty
+    reply=${reply:-Y}
+
+    if [[ "$reply" =~ ^[Yy]$ ]]; then
+      # Recreate tmux session (mirrors gwa layout)
+      tmux new-session -d -s "$session_name" -c "$worktree_path"
+      tmux new-window -t "$session_name:1" -c "$worktree_path"
+      tmux new-window -t "$session_name:2" -c "$worktree_path"
+      tmux send-keys -t "$session_name:2" "claude --dangerously-skip-permissions" C-m
+      tmux set-option -t "$session_name" default-command "cd $worktree_path; exec \$SHELL"
+      tmux select-window -t "$session_name:0"
+      echo "  ✓ Created session: $session_name"
+      created+=("$session_name")
+    else
+      printf "  Delete worktree and branch '%s'? [y/N] " "$branch"
+      read -r del_reply </dev/tty
+      del_reply=${del_reply:-N}
+
+      if [[ "$del_reply" =~ ^[Yy]$ ]]; then
+        # Inline deletion instead of gwr — we already have the correct
+        # branch name and worktree path, while gwr infers them from one arg.
+        if tmux has-session -t "$session_name" 2>/dev/null; then
+          tmux kill-session -t "$session_name"
+          echo "  Killed tmux session: $session_name"
+        fi
+        if [ -d "$worktree_path" ]; then
+          git worktree remove "$worktree_path" --force
+          echo "  Removed worktree: $worktree_path"
+        fi
+        if git show-ref --verify --quiet "refs/heads/$branch"; then
+          git branch -D "$branch"
+          echo "  Deleted branch: $branch"
+        fi
+        deleted+=("$session_name")
+      else
+        echo "  — Skipped"
+        skipped+=("$session_name")
+      fi
+    fi
+    echo ""
+  done <<< "$worktrees"
+
+  echo "--- Summary ---"
+  [ ${#created[@]} -gt 0 ] && echo "  Created: ${created[*]}"
+  [ ${#deleted[@]} -gt 0 ] && echo "  Deleted: ${deleted[*]}"
+  [ ${#skipped[@]} -gt 0 ] && echo "  Skipped: ${skipped[*]}"
+
+  if [ ${#created[@]} -gt 0 ]; then
+    echo "\nActive sessions:"
+    tmux ls 2>/dev/null
+  fi
+}
