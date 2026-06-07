@@ -24,3 +24,10 @@ shell-integration = zsh
 
 # Misc
 copy-on-select = true
+theme = tiki-love-dark
+
+# Glow: bloom shader gives bright text/cursor a soft luminous halo.
+# Tune THRESHOLD / INTENSITY / RADIUS at the top of the shader file.
+custom-shader = ~/.config/ghostty/shaders/bloom.glsl
+# Only animate the shader when the surface is focused (saves GPU).
+custom-shader-animation = false

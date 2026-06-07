@@ -44,10 +44,17 @@ git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/powerlevel10k
 
 ### 3. Create Symlinks
 
+> `make link` creates every symlink below automatically (and is idempotent —
+> safe to re-run after pulling new dotfiles). The manual commands are listed for
+> reference / partial setups.
+
 ```bash
 # Zsh
 ln -sfn ~/Documents/config/terminal-config/env/.zshrc ~/.zshrc
 ln -sfn ~/Documents/config/terminal-config/env/.zsh_profile ~/.zsh_profile
+ln -sfn ~/Documents/config/terminal-config/env/.zsh_functions ~/.zsh_functions
+ln -sfn ~/Documents/config/terminal-config/env/p10k-dark.zsh ~/.p10k-dark.zsh
+ln -sfn ~/Documents/config/terminal-config/env/p10k-light.zsh ~/.p10k-light.zsh
 
 # Tmux
 ln -sfn ~/Documents/config/terminal-config/env/.tmux.conf ~/.tmux.conf
