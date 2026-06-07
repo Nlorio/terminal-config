@@ -10,9 +10,9 @@
 //   INTENSITY — how strong the added halo is. Higher = brighter bloom.
 //   RADIUS    — spread of the halo in pixels (scales the sample step).
 
-const float THRESHOLD = 0.80;   // only near-white pixels glow
-const float INTENSITY = 0.04;   // very faint halo (orig bloom used 0.20)
-const float RADIUS    = 0.8;    // very tight spread (orig bloom used 1.414)
+const float THRESHOLD = 0.90;   // only the very brightest near-white pixels
+const float INTENSITY = 0.01;   // essentially imperceptible (orig bloom 0.20)
+const float RADIUS    = 0.6;    // minimal spread (orig bloom 1.414)
 
 // Golden spiral samples, [x, y, weight]; weight is inverse of distance.
 const vec3[24] samples = {

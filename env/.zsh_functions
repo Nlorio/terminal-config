@@ -1,5 +1,41 @@
 # Custom shell functions
 
+# Preview candidate p10k color schemes as live swatches + a sample prompt,
+# rendered on the tiki-love-dark background. Pick a number, then have the
+# palette applied to ~/.p10k-dark.zsh. Columns: secondary / dir / prompt / git.
+p10k-preview() {
+  local -A schemes
+  schemes=(
+    "1. Sunset Coral (current)" "EAB0A0 F0A84C F4C06C E89070 F07A6F"
+    "2. Amber Mono"             "B0916A F0A84C F4C06C E8A060 F07A6F"
+    "3. Jungle Tiki"            "8ACF7A F0A84C F4C06C 7AB89A F07A6F"
+    "4. Lagoon"                 "7AB89A F0A84C F4C06C 8ACF7A F07A6F"
+    "5. Ember Glow"             "E8A060 F0C06C F4E8D0 E89070 F07A6F"
+    "6. Sage Revival"           "A0B08A F0A84C F4C06C 8ACF7A F07A6F"
+    "7. Driftwood"              "C9A98A E8A060 F4E8D0 A0B08A F07A6F"
+    "8. Hibiscus"               "E89070 F0A84C F4C06C E85A4F F07A6F"
+    "9. Tide Pool"              "5C9A7A E8A060 F0C06C F4E8D0 F07A6F"
+    "10. Midnight Tiki"         "8A9A6A F0C06C F4E8D0 7AB89A F07A6F"
+  )
+  local order=(
+    "1. Sunset Coral (current)" "2. Amber Mono" "3. Jungle Tiki" "4. Lagoon"
+    "5. Ember Glow" "6. Sage Revival" "7. Driftwood" "8. Hibiscus"
+    "9. Tide Pool" "10. Midnight Tiki"
+  )
+  local sw() { local h=$1 r g b; r=$((16#${h[1,2]})) g=$((16#${h[3,4]})) b=$((16#${h[5,6]})); printf "\e[48;2;%d;%d;%dm   \e[0m" $r $g $b; }
+  local fg() { local h=$1 r g b; r=$((16#${h[1,2]})) g=$((16#${h[3,4]})) b=$((16#${h[5,6]})); printf "\e[38;2;%d;%d;%dm" $r $g $b; }
+  local bg="\e[48;2;26;20;16m"
+  local name cols sec dir pr git
+  printf "%-26s  %-3s %-3s %-3s %-3s   live prompt sample\n" "scheme" "2nd" "dir" "❯" "git"
+  for name in "${order[@]}"; do
+    cols=(${=schemes[$name]}); sec=$cols[1] dir=$cols[2] pr=$cols[3] git=$cols[4]
+    printf "%-26s  " "$name"
+    sw $sec; printf " "; sw $dir; printf " "; sw $pr; printf " "; sw $git
+    printf "   ${bg} $(fg $sec)nlorio@sage $(fg $dir)~/wt/hcc $(fg $git)⎇ main $(fg $pr)❯\e[0m\n"
+  done
+}
+
+
 dark-ui() {
   echo "dark" > ~/.config/theme
   : > ~/.config/ghostty/theme-override
@@ -36,10 +72,36 @@ _notify_nvim_theme() {
   # Neovim keeps its own theme state (separate from the terminal's ~/.config/theme)
   # so new nvim windows match, even when only the editor was switched.
   echo "$mode" > ~/.config/theme-nvim
-  local nvim_dir="${TMPDIR:-/tmp}/nvim.$(whoami)"
-  if [ -d "$nvim_dir" ]; then
-    for sock in $(find "$nvim_dir" -type s 2>/dev/null); do
-      nvim --server "$sock" --remote-send "<Cmd>lua require('lib.theme').apply('$mode')<CR>" </dev/null 2>/dev/null
-    done
-  fi
+
+  # Find every running nvim's RPC socket and tell it to re-apply the theme.
+  #
+  # nvim's default socket lives at <temp-root>/nvim.<user>/<random>/nvim.<pid>.0.
+  # The <temp-root> depends on how nvim was launched: a login/tmux shell sees a
+  # different $TMPDIR than this function might, and macOS uses a per-user
+  # /var/folders/... path rather than /tmp. So instead of guessing one root,
+  # search all the plausible roots and ping whatever sockets we find.
+  local user="$(whoami)"
+  local -a roots
+  roots=(
+    "${TMPDIR:-/tmp}"
+    "${XDG_RUNTIME_DIR}"
+    /tmp
+    "$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)"   # macOS per-user /var/folders root
+  )
+
+  local -a socks
+  local root
+  for root in "${roots[@]}"; do
+    [ -n "$root" ] && [ -d "$root" ] || continue
+    # nvim.<user> dirs may sit a level or two under the temp root; the socket
+    # itself is one level below that. -L follows the symlinked dirs nvim uses.
+    socks+=(${(f)"$(find -L "$root" -maxdepth 4 -type s -path "*nvim.${user}*" 2>/dev/null)"})
+  done
+
+  # Dedupe (roots can overlap, e.g. $TMPDIR == /tmp) and ping each live socket.
+  local sock
+  for sock in ${(u)socks}; do
+    [ -S "$sock" ] || continue
+    nvim --server "$sock" --remote-send "<Cmd>lua require('lib.theme').apply('$mode')<CR>" </dev/null 2>/dev/null
+  done
 }
