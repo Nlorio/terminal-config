@@ -10,7 +10,7 @@ window-padding-y = 10
 window-decoration = true
 
 # Theme (follows macOS system appearance by default)
-theme = light:Gruvbox Light,dark:Everforest Dark Medium
+theme = light:Gruvbox Light,dark:tiki-love-dark
 
 # Local theme override (written by dark-term/light-term commands)
 config-file = ?~/.config/ghostty/theme-override
@@ -24,6 +24,10 @@ shell-integration = zsh
 
 # Misc
 copy-on-select = true
-
-# Theme
 theme = tiki-love-dark
+
+# Glow: bloom shader gives bright text/cursor a soft luminous halo.
+# Tune THRESHOLD / INTENSITY / RADIUS at the top of the shader file.
+custom-shader = ~/.config/ghostty/shaders/bloom.glsl
+# Only animate the shader when the surface is focused (saves GPU).
+custom-shader-animation = false

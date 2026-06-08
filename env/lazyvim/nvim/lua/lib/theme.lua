@@ -1,7 +1,41 @@
 local M = {}
 
-M.dark = { colorscheme = "everforest", background = "dark" }
-M.light = { colorscheme = "gruvbox", background = "light" }
+-- Melange ships both a dark and a light variant in a single colorscheme; it
+-- picks the variant from `vim.o.background`, so both modes use the same name.
+M.dark = { colorscheme = "melange", background = "dark" }
+M.light = { colorscheme = "melange", background = "light" }
+
+-- Previous themes, kept for easy switching in the future:
+-- M.light = { colorscheme = "dracula-alucard", background = "light" }
+-- M.dark = { colorscheme = "everforest", background = "dark" }
+-- M.light = { colorscheme = "gruvbox", background = "light" }
+
+-- Neovim tracks its theme independently from the terminal so `light-term` can
+-- flip just the editor while the terminal stays on its own (e.g. tiki) theme.
+-- Prefer the nvim-specific file, fall back to the shared terminal file.
+M.nvim_theme_file = vim.fn.expand("~/.config/theme-nvim")
+M.shared_theme_file = vim.fn.expand("~/.config/theme")
+
+-- Returns the current nvim mode ("dark"/"light") or nil if neither file has a
+-- recognized value.
+function M.current_mode()
+  for _, file in ipairs({ M.nvim_theme_file, M.shared_theme_file }) do
+    if vim.fn.filereadable(file) == 1 then
+      local mode = vim.fn.readfile(file)[1]
+      if M[mode] then
+        return mode
+      end
+    end
+  end
+  return nil
+end
+
+-- Persist the nvim mode to its own state file (so new nvim windows match).
+function M.persist(mode)
+  if M[mode] then
+    vim.fn.writefile({ mode }, M.nvim_theme_file)
+  end
+end
 
 function M.apply(mode)
   local t = M[mode]
@@ -9,6 +43,29 @@ function M.apply(mode)
     vim.o.background = t.background
     vim.cmd.colorscheme(t.colorscheme)
   end
+end
+
+-- Re-apply highlight overrides that the active colorscheme gets wrong for us.
+-- Currently: Melange light's default Visual (#D9D3CE on #F1F1F1) is nearly
+-- invisible, so force a stronger one. Dark keeps the colorscheme's default.
+local function apply_overrides()
+  if vim.o.background == "light" then
+    vim.api.nvim_set_hl(0, "Visual", { bg = "#D6C8E8", fg = "#241F1A" })
+  end
+end
+
+-- A colorscheme load resets all highlights, so the override must run AFTER every
+-- load. apply() (theme switches) is covered, but LazyVim sets the colorscheme at
+-- startup without calling apply(), and config/autocmds.lua loads too late
+-- (VeryLazy) to catch that first ColorScheme event. So register the autocmd here
+-- AND apply once immediately — this file is required during plugin config, which
+-- runs at the right time to cover the initial startup load too.
+function M.setup_overrides()
+  vim.api.nvim_create_autocmd("ColorScheme", {
+    group = vim.api.nvim_create_augroup("visual_contrast", { clear = true }),
+    callback = apply_overrides,
+  })
+  apply_overrides()
 end
 
 return M

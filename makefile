@@ -85,8 +85,10 @@ link:
 	@# Ghostty
 	@ln -sfn $(REPO_DIR)/env/ghostty/config $(HOME)/.config/ghostty/config
 	@cp -r $(REPO_DIR)/env/ghostty/themes/ $(HOME)/.config/ghostty/themes/
+	@cp -r $(REPO_DIR)/env/ghostty/shaders/ $(HOME)/.config/ghostty/shaders/
 	@echo "  ~/.config/ghostty/config -> env/ghostty/config"
 	@echo "  ~/.config/ghostty/themes/ <- env/ghostty/themes/ (copied)"
+	@echo "  ~/.config/ghostty/shaders/ <- env/ghostty/shaders/ (copied)"
 
 	@# Neofetch
 	@ln -sfn $(REPO_DIR)/neofetch/config.conf $(HOME)/.config/neofetch/config.conf
@@ -110,5 +112,6 @@ unlink:
 	@rm -f $(HOME)/.config/nvim
 	@rm -f $(HOME)/.config/ghostty/config
 	@rm -rf $(HOME)/.config/ghostty/themes
+	@rm -rf $(HOME)/.config/ghostty/shaders
 	@rm -f $(HOME)/.config/neofetch/config.conf
 	@echo "Symlinks removed."

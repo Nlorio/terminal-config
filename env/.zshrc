@@ -1,3 +1,5 @@
+neofetch
+
 # Suppress instant prompt warning for console output during init
 typeset -g POWERLEVEL9K_INSTANT_PROMPT=quiet
 
@@ -34,8 +36,6 @@ else
   [[ ! -f ~/.p10k-dark.zsh ]] || source ~/.p10k-dark.zsh
 fi
 eval "$(direnv hook zsh)"
-export RIPGREP_CONFIG_PATH="/Users/nlorio/Documents/projects/notion-next/.ripgreprc"
-eval "$('/usr/local/bin/node' -r '/Users/nlorio/Documents/projects/notion-next/esbuild-runner.js' '/Users/nlorio/Documents/projects/notion-next/src/cli/main/notion.ts' completion --install)"
 export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
 
 export PATH="$HOME/.local/bin:$PATH"
@@ -45,7 +45,6 @@ export FZF_DEFAULT_OPTS="--height=~5"
 eval "$(fzf --zsh)"
 
 . "$HOME/.cargo/env"
-eval "$(${CARGO_HOME:-$HOME/.cargo}/bin/rv shell init zsh)"
 
 ### From notion android setup
 export ANDROID_HOME=/Users/nlorio/Library/Android/sdk
