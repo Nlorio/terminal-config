@@ -53,3 +53,4 @@ export JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home
 export PATH="$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin"
 
 alias t3="n exec 25.8.2 npx t3"
+export PATH="$HOME/.local/share/mise/shims:$PATH"

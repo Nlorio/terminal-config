@@ -270,9 +270,26 @@ tmux bind-key   -T prefix C-a send-prefix
 tmux set-option -t "$session" status-bg colour208
 tmux set-option -t "$session" status-fg black
 
+# OSC 52 clipboard passthrough. tmux copy-mode selections on the boxy emit
+# an OSC 52 escape; the outer (local) tmux — which also has set-clipboard
+# on — catches it and forwards to Ghostty, landing text on the macOS
+# clipboard. `terminal-features ...:clipboard` tells this inner tmux the
+# enclosing terminal supports OSC 52 regardless of $TERM, and mouse on lets
+# you drag-select into copy-mode. Without these, copying from a nested pane
+# silently goes nowhere.
+tmux set-option -g  set-clipboard on
+tmux set-option -g  allow-passthrough on
+tmux set-option -sa terminal-features ",*:clipboard"
+tmux set-option -g  mouse on
+
 # Window 1 — extra remote shell.
 tmux new-window -t "$session:1" -c "$nn" -n "shell"
 
+# AI launches go through `zsh -lc` so they run in a LOGIN shell. The boxy's
+# native Anthropic auth (env exported from the login profile) is what
+# `notion boxy claude` relies on — it too launches via `zsh -lc`. Typing
+# `claude`/`_launch.sh` straight into a pane runs an interactive non-login
+# shell that never sources that profile, so claude lands unauthenticated.
 if [ "$layout" = "l" ] || [ "$layout" = "L" ]; then
   # Window 2 — agents (vertical split, labeled panes).
   tmux new-window -t "$session:2" -c "$nn" -n "agents"
@@ -281,22 +298,22 @@ if [ "$layout" = "l" ] || [ "$layout" = "L" ]; then
   tmux split-window      -t "$session:2" -h -c "$nn"
   tmux set-option -p -t "$session:2.0" @role "implementor"
   tmux set-option -p -t "$session:2.1" @role "researcher"
-  tmux send-keys  -t "$session:2.0" "$roles/_launch.sh implementor $ai $todo" C-m
-  tmux send-keys  -t "$session:2.1" "$roles/_launch.sh researcher $ai $todo" C-m
+  tmux send-keys  -t "$session:2.0" "zsh -lc '$roles/_launch.sh implementor $ai $todo'" C-m
+  tmux send-keys  -t "$session:2.1" "zsh -lc '$roles/_launch.sh researcher $ai $todo'" C-m
 
   # Window 3 — adversarial reviewer.
   tmux new-window -t "$session:3" -c "$nn" -n "review"
   tmux set-window-option -t "$session:3" pane-border-status top
   tmux set-window-option -t "$session:3" pane-border-format " #{@role} "
   tmux set-option -p -t "$session:3.0" @role "adversarial"
-  tmux send-keys  -t "$session:3.0" "$roles/_launch.sh adversarial $ai $todo" C-m
+  tmux send-keys  -t "$session:3.0" "zsh -lc '$roles/_launch.sh adversarial $ai $todo'" C-m
 else
   # Window 2 — single AI, no role priming.
   tmux new-window -t "$session:2" -c "$nn" -n "ai"
   if [ "$ai" = "x" ] || [ "$ai" = "X" ]; then
-    tmux send-keys -t "$session:2" "codex --dangerously-bypass-approvals-and-sandbox" C-m
+    tmux send-keys -t "$session:2" "zsh -lc 'codex --dangerously-bypass-approvals-and-sandbox'" C-m
   else
-    tmux send-keys -t "$session:2" "claude --dangerously-skip-permissions" C-m
+    tmux send-keys -t "$session:2" "zsh -lc 'claude --dangerously-skip-permissions'" C-m
   fi
 fi
 

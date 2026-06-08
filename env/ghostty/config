@@ -24,3 +24,6 @@ shell-integration = zsh
 
 # Misc
 copy-on-select = true
+
+# Theme
+theme = tiki-love-dark
