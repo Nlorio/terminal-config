@@ -5,7 +5,9 @@ return {
       servers = {
         tsgo = {
           enabled = true,
-          cmd = { "tsgo", "--lsp", "--stdio" },
+          -- GOMEMLIMIT is a soft cap for the Go GC; it accepts binary units only
+          -- (B/KiB/MiB/GiB/TiB), so 50GB is expressed as 50GiB (~53.7 GB).
+          cmd = { "env", "GOMEMLIMIT=50GiB", "tsgo", "--lsp", "--stdio" },
           filetypes = {
             "javascript",
             "javascriptreact",
