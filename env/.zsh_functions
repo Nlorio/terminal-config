@@ -36,49 +36,64 @@ p10k-preview() {
 }
 
 
-# --- tsgo / LSP memory triage -------------------------------------------------
+# --- process memory triage ----------------------------------------------------
 # Each Claude Code session and each nvim instance spawns its own `tsgo`
-# TypeScript LSP. Against the notion-next monorepo a single one can balloon to
-# 20-30GB, so a few stale sessions quietly eat all your RAM. The hogs are
-# usually the ones launched by Claude Code's lspMcp server, which (unlike nvim)
-# does not inherit the GOMEMLIMIT cap. These helpers map every live tsgo back to
-# the tmux pane + app that owns it, and let you reap the stale ones.
+# TypeScript LSP (and various node helpers/MCP servers). Against the notion-next
+# monorepo a single tsgo can balloon to 20-30GB, so a few stale sessions quietly
+# eat all your RAM. The hogs are usually the ones launched by Claude Code's
+# lspMcp server, which (unlike nvim) does not inherit the GOMEMLIMIT cap. These
+# helpers map every heavy process back to the tmux pane + app that owns it, so
+# you can tell which session/window/agent to close vs which stray to kill.
 
 # Walk up from a pid until an ancestor matches a live tmux pane; print "session
-# window:name" for that pane, else "<no tmux pane>".
-_tsgo_owner_pane() {
-  local cur=$1 pane
+# window:name" for that pane, else nothing. $2 may pass a cached `tmux
+# list-panes` listing (pane_pid + label per line) to avoid re-querying per call.
+_proc_pane() {
+  local cur=$1 panes=${2:-$(tmux list-panes -a -F '#{pane_pid} #{session_name} #{window_index}:#{window_name}' 2>/dev/null)} pane
   while [ -n "$cur" ] && [ "$cur" != "1" ]; do
-    pane=$(tmux list-panes -a -F '#{pane_pid} #{session_name} #{window_index}:#{window_name}' 2>/dev/null \
-            | awk -v c="$cur" '$1==c {$1=""; sub(/^ +/,""); print; exit}')
+    pane=$(print -r -- "$panes" | awk -v c="$cur" '$1==c {$1=""; sub(/^ +/,""); print; exit}')
     [ -n "$pane" ] && { print -r -- "$pane"; return; }
     cur=$(ps -o ppid= -p "$cur" 2>/dev/null | tr -d ' ')
   done
-  print -r -- "<no tmux pane>"
 }
 
-# List every live tsgo LSP sorted by memory, with the app (claude/nvim) and
-# tmux pane that owns it, plus its working dir. Run this first to triage.
-tsgo-owners() {
+# Walk up from a pid to the owning interactive app (claude/nvim); else print "-".
+_proc_app() {
+  local cur=$1
+  while [ -n "$cur" ] && [ "$cur" != "1" ]; do
+    case "$(ps -o command= -p "$cur" 2>/dev/null)" in
+      claude|*/claude) print -- claude; return ;;
+      *nvim*)          print -- nvim;   return ;;
+    esac
+    cur=$(ps -o ppid= -p "$cur" 2>/dev/null | tr -d ' ')
+  done
+  print -- -
+}
+
+# Show your top memory-consuming processes, each mapped to the tmux pane + app
+# that owns it, plus its working dir. Optional args: row count (default 20) and
+# a grep pattern to filter the process command (e.g. `mem-owners 30 node`).
+mem-owners() {
   emulate -L zsh
-  printf '%8s  %-7s  %-7s  %-40s  %s\n' MEM PID APP "TMUX PANE" DIR
-  ps -axo pid=,ppid=,rss=,command= \
-    | grep -E 'native-preview.*lib/tsgo' | grep -v grep \
-    | sort -k3 -rn \
-    | while read -r pid ppid rss rest; do
-        local cur=$ppid app="?"
-        while [ -n "$cur" ] && [ "$cur" != "1" ]; do
-          case "$(ps -o command= -p "$cur" 2>/dev/null)" in
-            claude|*/claude) app=claude; break ;;
-            *nvim*)          app=nvim;   break ;;
-          esac
-          cur=$(ps -o ppid= -p "$cur" 2>/dev/null | tr -d ' ')
-        done
-        local pane=$(_tsgo_owner_pane "$pid")
-        local cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
-        printf '%6dMB  %-7s  %-7s  %-40s  %s\n' "$((rss/1024))" "$pid" "$app" "$pane" "${cwd:t}"
+  local n=${1:-20} filter=${2:-.}
+  local panes=$(tmux list-panes -a -F '#{pane_pid} #{session_name} #{window_index}:#{window_name}' 2>/dev/null)
+  printf '%8s  %-7s  %-7s  %-40s  %-16s  %s\n' MEM PID APP "TMUX PANE" COMMAND DIR
+  ps -U "$USER" -o pid=,rss=,comm= \
+    | grep -E "$filter" \
+    | sort -k2 -rn | head -n "$n" \
+    | while read -r pid rss comm; do
+        local app=$(_proc_app "$pid")
+        local pane=$(_proc_pane "$pid" "$panes")
+        # cwd only matters for tree/dev processes; skip lsof for GUI/system procs.
+        local cwd=""
+        [[ -n "$pane" || "$app" != "-" ]] && cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+        printf '%6dMB  %-7s  %-7s  %-40s  %-16s  %s\n' \
+          "$((rss/1024))" "$pid" "$app" "${pane:-<no tmux pane>}" "${comm:t}" "${cwd:t}"
       done
 }
+
+# Focused view: just the tsgo LSPs, sorted by memory. Wrapper over mem-owners.
+tsgo-owners() { mem-owners 50 'native-preview.*lib/tsgo'; }
 
 # Reap stale tsgo LSPs. No args: show the table + usage. With pids: SIGTERM them.
 # --over <GB>: SIGTERM every tsgo above that size (after a y/N confirm).
