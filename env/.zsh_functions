@@ -36,6 +36,81 @@ p10k-preview() {
 }
 
 
+# --- tsgo / LSP memory triage -------------------------------------------------
+# Each Claude Code session and each nvim instance spawns its own `tsgo`
+# TypeScript LSP. Against the notion-next monorepo a single one can balloon to
+# 20-30GB, so a few stale sessions quietly eat all your RAM. The hogs are
+# usually the ones launched by Claude Code's lspMcp server, which (unlike nvim)
+# does not inherit the GOMEMLIMIT cap. These helpers map every live tsgo back to
+# the tmux pane + app that owns it, and let you reap the stale ones.
+
+# Walk up from a pid until an ancestor matches a live tmux pane; print "session
+# window:name" for that pane, else "<no tmux pane>".
+_tsgo_owner_pane() {
+  local cur=$1 pane
+  while [ -n "$cur" ] && [ "$cur" != "1" ]; do
+    pane=$(tmux list-panes -a -F '#{pane_pid} #{session_name} #{window_index}:#{window_name}' 2>/dev/null \
+            | awk -v c="$cur" '$1==c {$1=""; sub(/^ +/,""); print; exit}')
+    [ -n "$pane" ] && { print -r -- "$pane"; return; }
+    cur=$(ps -o ppid= -p "$cur" 2>/dev/null | tr -d ' ')
+  done
+  print -r -- "<no tmux pane>"
+}
+
+# List every live tsgo LSP sorted by memory, with the app (claude/nvim) and
+# tmux pane that owns it, plus its working dir. Run this first to triage.
+tsgo-owners() {
+  emulate -L zsh
+  printf '%8s  %-7s  %-7s  %-40s  %s\n' MEM PID APP "TMUX PANE" DIR
+  ps -axo pid=,ppid=,rss=,command= \
+    | grep -E 'native-preview.*lib/tsgo' | grep -v grep \
+    | sort -k3 -rn \
+    | while read -r pid ppid rss rest; do
+        local cur=$ppid app="?"
+        while [ -n "$cur" ] && [ "$cur" != "1" ]; do
+          case "$(ps -o command= -p "$cur" 2>/dev/null)" in
+            claude|*/claude) app=claude; break ;;
+            *nvim*)          app=nvim;   break ;;
+          esac
+          cur=$(ps -o ppid= -p "$cur" 2>/dev/null | tr -d ' ')
+        done
+        local pane=$(_tsgo_owner_pane "$pid")
+        local cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+        printf '%6dMB  %-7s  %-7s  %-40s  %s\n' "$((rss/1024))" "$pid" "$app" "$pane" "${cwd:t}"
+      done
+}
+
+# Reap stale tsgo LSPs. No args: show the table + usage. With pids: SIGTERM them.
+# --over <GB>: SIGTERM every tsgo above that size (after a y/N confirm).
+# The owning editor/agent respawns the LSP on its next request (warm index lost).
+tsgo-reap() {
+  emulate -L zsh
+  if [[ $# -eq 0 ]]; then
+    tsgo-owners
+    print -- "\nUsage: tsgo-reap <pid…>       kill specific tsgo LSPs"
+    print -- "       tsgo-reap --over <GB>  kill every tsgo above <GB>"
+    return 0
+  fi
+
+  local -a targets
+  if [[ $1 == --over ]]; then
+    local gb=${2:?need a GB threshold} limit
+    limit=$(( gb * 1024 * 1024 ))   # KB
+    targets=(${(f)"$(ps -axo pid=,rss=,command= | grep -E 'native-preview.*lib/tsgo' | grep -v grep | awk -v l=$limit '$2>l {print $1}')"})
+    (( ${#targets} )) || { print -- "No tsgo over ${gb}GB."; return 0; }
+    print -- "Will SIGTERM these tsgo LSPs (>${gb}GB):"
+    ps -o pid=,rss= -p ${(j: :)targets} 2>/dev/null | awk '{printf "  %-7s %dMB\n",$1,$2/1024}'
+    print -n -- "Proceed? [y/N] "
+    read -q || { print; return 1; }
+    print
+  else
+    targets=($@)
+  fi
+
+  kill -TERM ${(j: :)targets} 2>/dev/null \
+    && print -- "Sent SIGTERM to: ${(j:, :)targets}  (LSP respawns on next request)"
+}
+
 dark-ui() {
   echo "dark" > ~/.config/theme
   : > ~/.config/ghostty/theme-override
