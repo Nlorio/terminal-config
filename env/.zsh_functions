@@ -44,6 +44,12 @@ p10k-preview() {
 # lspMcp server, which (unlike nvim) does not inherit the GOMEMLIMIT cap. These
 # helpers map every heavy process back to the tmux pane + app that owns it, so
 # you can tell which session/window/agent to close vs which stray to kill.
+#
+# Triage flow: `mem-owners` (pressure line + per-process MEM/%CPU, ⚠ flags the
+# runaway shape) → `proc-impact <pid>` for a precise CPU read on a suspect →
+# `tsgo-reap` to kill. Key lesson baked in: memory size alone is misleading —
+# what makes you slow is system pressure (full RAM → swap thrash), and a heavy
+# process is only worth killing urgently if it's *also* burning CPU.
 
 # Walk up from a pid until an ancestor matches a live tmux pane; print "session
 # window:name" for that pane, else nothing. $2 may pass a cached `tmux
@@ -70,30 +76,105 @@ _proc_app() {
   print -- -
 }
 
+# Convert a ps time field ([dd-][hh:]mm:ss[.ss]) to seconds. Handles both the
+# cputime form (mm:ss.ss, minutes can exceed 60) and etime form (dd-hh:mm:ss).
+_to_secs() {
+  print -r -- "$1" | awk '{ t=$0; d=0
+    if (t ~ /-/) { split(t,a,"-"); d=a[1]; t=a[2] }
+    n=split(t,b,":"); s=0; for (i=1;i<=n;i++) s=s*60+b[i]
+    printf "%.2f", d*86400 + s }'
+}
+
+# One-line system memory-pressure summary. This is the context that decides
+# whether a big process actually makes you slow: lots of RAM in use is fine
+# until `free` hits ~0 and the machine starts compressing/swapping. Learned the
+# hard way — a 16GB process is harmless on 128GB right up until total demand
+# crosses physical RAM, then swap thrash (not the GB number) is what lags you.
+_mem_pressure() {
+  emulate -L zsh
+  local pg=$(sysctl -n hw.pagesize) total=$(sysctl -n hw.memsize) vm=$(vm_stat)
+  local free=$(print -r -- "$vm" | awk '/Pages free/{gsub(/\./,"",$3);print $3}')
+  local spec=$(print -r -- "$vm" | awk '/Pages speculative/{gsub(/\./,"",$3);print $3}')
+  local comp=$(print -r -- "$vm" | awk '/occupied by compressor/{gsub(/\./,"",$5);print $5}')
+  local sw=$(sysctl -n vm.swapusage)
+  local sw_used=$(print -r -- "$sw" | awk '{for(i=1;i<=NF;i++)if($i=="used")print $(i+2)}' | tr -d 'M')
+  local sw_tot=$(print -r -- "$sw" | awk '{for(i=1;i<=NF;i++)if($i=="total")print $(i+2)}' | tr -d 'M')
+  local freeg=$(( (free+spec)*pg/1073741824.0 )) totalg=$(( total/1073741824.0 ))
+  local compg=$(( comp*pg/1073741824.0 ))
+  # Pressure if real free RAM is under ~4% of total, or swap is nearly full.
+  local flag=""
+  (( freeg < totalg*0.04 || (sw_tot>0 && sw_used > sw_tot*0.9) )) && flag="  ⚠ UNDER PRESSURE (compress/swap thrash → slow)"
+  printf 'mem: %.0fG total · %.1fG free · %.1fG compressed · swap %.1f/%.1fG%s\n' \
+    $totalg $freeg $compg $((sw_used/1024.0)) $((sw_tot/1024.0)) "$flag"
+}
+
 # Show your top memory-consuming processes, each mapped to the tmux pane + app
-# that owns it, plus its working dir. Optional args: row count (default 20) and
-# a grep pattern to filter the process command (e.g. `mem-owners 30 node`).
+# that owns it, plus its working dir. Leads with a system memory-pressure line
+# (whether you're actually slow) and shows %CPU per process, because memory size
+# alone is misleading: a heavy process that's also pegging CPU is a runaway (⚠),
+# while a heavy idle one is just cheap-to-reclaim cache. %CPU here is ps's recent
+# average — for a precise current reading on a suspect, use `proc-impact <pid>`.
+# Optional args: row count (default 20) and a grep pattern on the command
+# (e.g. `mem-owners 30 node`).
 mem-owners() {
   emulate -L zsh
   local n=${1:-20} filter=${2:-.}
+  _mem_pressure
   local panes=$(tmux list-panes -a -F '#{pane_pid} #{session_name} #{window_index}:#{window_name}' 2>/dev/null)
-  printf '%8s  %-7s  %-7s  %-40s  %-16s  %s\n' MEM PID APP "TMUX PANE" COMMAND DIR
-  ps -U "$USER" -o pid=,rss=,comm= \
+  printf '%8s  %5s  %-7s  %-7s  %-40s  %-16s  %s\n' MEM %CPU PID APP "TMUX PANE" COMMAND DIR
+  ps -U "$USER" -o pid=,rss=,%cpu=,comm= \
     | grep -E "$filter" \
     | sort -k2 -rn | head -n "$n" \
-    | while read -r pid rss comm; do
+    | while read -r pid rss cpu comm; do
         local app=$(_proc_app "$pid")
         local pane=$(_proc_pane "$pid" "$panes")
         # cwd only matters for tree/dev processes; skip lsof for GUI/system procs.
         local cwd=""
         [[ -n "$pane" || "$app" != "-" ]] && cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
-        printf '%6dMB  %-7s  %-7s  %-40s  %-16s  %s\n' \
-          "$((rss/1024))" "$pid" "$app" "${pane:-<no tmux pane>}" "${comm:t}" "${cwd:t}"
+        # Flag the runaway shape: lots of RAM AND sustained CPU (both drains).
+        local flag=""
+        (( rss/1024 > 4000 && cpu > 50 )) && flag="  ⚠ runaway?"
+        printf '%6dMB  %5.0f  %-7s  %-7s  %-40s  %-16s  %s%s\n' \
+          "$((rss/1024))" "$cpu" "$pid" "$app" "${pane:-<no tmux pane>}" "${comm:t}" "${cwd:t}" "$flag"
       done
 }
 
 # Focused view: just the tsgo LSPs, sorted by memory. Wrapper over mem-owners.
 tsgo-owners() { mem-owners 50 'native-preview.*lib/tsgo'; }
+
+# Drill-down on one pid: is it a runaway worth killing, or legitimately busy?
+# Codifies the diagnosis that found a tsgo burning 1.6 cores + 16GB for a day.
+# Measures CPU two ways, because each lies on its own:
+#   - "now": a precise delta over <window>s (default 4) — truth about this moment.
+#   - "lifetime": total CPU vs uptime — flags slow churners ps's %CPU misses.
+# A language server (or any event-driven proc) sitting well above ~0% when you
+# are not actively driving it is the runaway tell. Usage: proc-impact <pid> [s].
+proc-impact() {
+  emulate -L zsh
+  local pid=${1:?usage: proc-impact <pid> [window-secs]} w=${2:-4}
+  ps -p "$pid" >/dev/null 2>&1 || { print -- "no such pid: $pid"; return 1; }
+  local comm=$(ps -o comm= -p "$pid"); comm=${comm:t}
+  local app=$(_proc_app "$pid") pane=$(_proc_pane "$pid")
+  local rssg=$(( $(ps -o rss= -p "$pid" | tr -d ' ')/1048576.0 ))
+  local c1=$(_to_secs "$(ps -o time= -p "$pid")")
+  sleep "$w"
+  local c2=$(_to_secs "$(ps -o time= -p "$pid")")
+  local life=$(_to_secs "$(ps -o etime= -p "$pid")")
+  local now=$(( (c2-c1)/w*100 )) avg=$(( life>0 ? c2/life*100 : 0 ))
+  print -- "${comm} (pid ${pid})  —  owner: ${app}  ${pane:-<no tmux pane>}"
+  printf '  memory:        %.1f GB\n' $rssg
+  printf '  CPU now:       %.0f%% of one core   (measured over %ss)\n' $now $w
+  printf '  CPU lifetime:  %.1f CPU-hours over %.1fh up  = %.0f%% avg of one core\n' \
+    $((c2/3600.0)) $((life/3600.0)) $avg
+  local verdict
+  if   (( now > 80 && rssg > 4 )); then verdict="⚠ RUNAWAY — heavy CPU + memory. Safe to kill if its owner isn't actively using it (it respawns)."
+  elif (( now > 80 ));            then verdict="busy now (CPU-bound). Killing interrupts real work in progress."
+  elif (( now < 5 && rssg > 4 )); then verdict="idle but holding memory — cheap to reclaim."
+  elif (( avg > 40 ));            then verdict="⚠ low right now but a long-run churner (high lifetime avg) — watch it."
+  else                                 verdict="nominal."
+  fi
+  print -- "  verdict:       $verdict"
+}
 
 # Reap stale tsgo LSPs. No args: show the table + usage. With pids: SIGTERM them.
 # --over <GB>: SIGTERM every tsgo above that size (after a y/N confirm).
