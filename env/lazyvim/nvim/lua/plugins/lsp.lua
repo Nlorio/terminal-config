@@ -5,9 +5,19 @@ return {
       servers = {
         tsgo = {
           enabled = true,
-          -- GOMEMLIMIT is a soft cap for the Go GC; it accepts binary units only
-          -- (B/KiB/MiB/GiB/TiB), so 50GB is expressed as 50GiB (~53.7 GB).
-          cmd = { "env", "GOMEMLIMIT=50GiB", "tsgo", "--lsp", "--stdio" },
+          -- tsgo (the Go TS server) builds one full type-checker PER THREAD and
+          -- duplicates type/symbol state across them, and never frees allocated
+          -- types -- so memory and CPU scale with thread count, NOT with GC
+          -- tuning. The real lever is capping threads: GOMAXPROCS limits the Go
+          -- scheduler to N cores (and, since tsgo sizes its checker pool by it,
+          -- ~N checkers instead of all 16 -> far less duplication). GOMEMLIMIT is
+          -- only a soft backstop here (you can't GC what's never freed; too low
+          -- just causes GC thrash), so it's set high. Units are binary only
+          -- (GiB), so 24GB ~= 24GiB. See:
+          -- https://zackoverflow.dev/writing/why-does-tsgo-use-so-much-memory
+          -- To go further if 4 cores still isn't enough, append "--singleThreaded"
+          -- to the cmd below (1 checker, ~half the memory, slower on big files).
+          cmd = { "env", "GOMAXPROCS=4", "GOMEMLIMIT=24GiB", "tsgo", "--lsp", "--stdio" },
           filetypes = {
             "javascript",
             "javascriptreact",

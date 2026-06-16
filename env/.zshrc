@@ -29,6 +29,19 @@ source ~/powerlevel10k/powerlevel10k.zsh-theme
 export EDITOR="nvim"
 export VISUAL="nvim"
 
+# Cap tsgo (Go TS server) resource use. It builds one type-checker PER THREAD
+# with duplicated, never-freed state, so memory + CPU scale with thread count.
+# GOMAXPROCS limits the Go scheduler to N cores AND shrinks tsgo's checker pool
+# (~N checkers instead of all 16) -> far less CPU and memory. GOMEMLIMIT is a
+# soft backstop only (can't GC what's never freed), so kept high. This is
+# inherited by anything launched from the shell -- notably Claude Code's lspMcp,
+# which otherwise passes no limits. Applies to NEW shells/sessions; restart
+# claude (or the session) to pick it up. Affects all Go tools (gh, docker, etc.)
+# -- harmless given they don't need >4 cores. See:
+# https://zackoverflow.dev/writing/why-does-tsgo-use-so-much-memory
+export GOMAXPROCS=4
+export GOMEMLIMIT=24GiB
+
 # Load p10k config matching current theme
 if [[ -f ~/.config/theme ]] && [[ "$(cat ~/.config/theme)" == "light" ]]; then
   [[ ! -f ~/.p10k-light.zsh ]] || source ~/.p10k-light.zsh
@@ -53,3 +66,5 @@ export PATH="$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_
 
 alias t3="n exec 25.8.2 npx t3"
 export PATH="$HOME/.local/share/mise/shims:$PATH"
+export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+if command -v rv >/dev/null 2>&1; then eval "$(rv shell init zsh)"; fi
