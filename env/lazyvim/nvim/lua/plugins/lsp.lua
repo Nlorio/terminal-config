@@ -1,3 +1,9 @@
+-- Where tsgo GC traces land (GODEBUG=gctrace=1 writes one line per GC to
+-- stderr; we redirect it here so it doesn't drown nvim's lsp.log). Created up
+-- front so the redirect target's dir always exists.
+local tsgo_trace_dir = vim.fn.expand("~/tsgo-traces")
+vim.fn.mkdir(tsgo_trace_dir, "p")
+
 return {
   {
     "neovim/nvim-lspconfig",
@@ -17,7 +23,19 @@ return {
           -- https://zackoverflow.dev/writing/why-does-tsgo-use-so-much-memory
           -- To go further if 4 cores still isn't enough, append "--singleThreaded"
           -- to the cmd below (1 checker, ~half the memory, slower on big files).
-          cmd = { "env", "GOMAXPROCS=4", "GOMEMLIMIT=24GiB", "tsgo", "--lsp", "--stdio" },
+          --
+          -- GODEBUG=gctrace=1 logs every GC (heap before/after, goal, pause) so
+          -- we can see the memory-growth curve and confirm GC reclaims nothing.
+          -- Wrapped in `sh -c ... exec` so its stderr can be redirected to a
+          -- dedicated trace file; `exec` keeps the process tree as plain tsgo.
+          cmd = {
+            "sh",
+            "-c",
+            "exec env GOMAXPROCS=4 GOMEMLIMIT=24GiB GODEBUG=gctrace=1 "
+              .. "tsgo --lsp --stdio 2>>"
+              .. tsgo_trace_dir
+              .. "/tsgo-nvim-gctrace.log",
+          },
           filetypes = {
             "javascript",
             "javascriptreact",

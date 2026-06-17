@@ -176,6 +176,68 @@ proc-impact() {
   print -- "  verdict:       $verdict"
 }
 
+# --- spike recorder -----------------------------------------------------------
+# tsgo runaways settle within a minute, so by the time you notice and attach,
+# the evidence is gone. This captures a full trace the moment a tsgo crosses a
+# threshold, so the "why" is recorded in the act. Driven by a launchd agent
+# (every 60s) but also runnable by hand. Tunable via env:
+#   TSGO_MEM_GB (8)  TSGO_CPU (200)  TSGO_COOLDOWN (900s)  TSGO_TRACE_DIR (~/tsgo-traces)
+
+# Write one trace file for a hot pid: pressure + proc-impact + owner chain +
+# open dirs (watch scope) + a CPU sample (where it's actually spending time).
+_tsgo_snapshot() {
+  emulate -L zsh
+  zmodload zsh/datetime 2>/dev/null
+  local pid=$1 dir=$2 gb=$3 cpuv=$4
+  local out="$dir/tsgo-$pid-$(strftime '%Y%m%d-%H%M%S' $EPOCHSECONDS).txt"
+  {
+    printf '=== tsgo spike — %s ===\n' "$(strftime '%Y-%m-%d %H:%M:%S' $EPOCHSECONDS)"
+    printf 'pid=%s  trigger: %.1fGB / %s%% CPU\n' "$pid" "$gb" "$cpuv"
+    printf '\n--- system pressure ---\n';  _mem_pressure
+    printf '\n--- proc-impact ---\n';       proc-impact "$pid" 3
+    printf '\n--- owner chain ---\n'
+    local cur=$pid
+    while [ -n "$cur" ] && [ "$cur" != "1" ]; do
+      ps -o pid=,ppid=,command= -p "$cur" 2>/dev/null | cut -c1-130
+      cur=$(ps -o ppid= -p "$cur" 2>/dev/null | tr -d ' ')
+    done
+    printf '\n--- open dirs/files (top 25 — hints at watch scope) ---\n'
+    lsof -p "$pid" 2>/dev/null | awk '$5=="DIR"||$5=="REG"{print $9}' | sort | uniq -c | sort -rn | head -25
+    printf '\n--- CPU sample (3s — where the cores go) ---\n'
+    sample "$pid" 3 2>/dev/null
+  } > "$out" 2>&1
+  print -- "[tsgo-watch] captured $out"
+}
+
+# One pass: snapshot every tsgo over threshold (respecting per-pid cooldown).
+# This is what the launchd agent runs each tick; safe to run by hand too.
+tsgo-watch-once() {
+  emulate -L zsh
+  zmodload zsh/datetime 2>/dev/null
+  local dir=${TSGO_TRACE_DIR:-$HOME/tsgo-traces}
+  local mem_gb=${TSGO_MEM_GB:-8} cpu=${TSGO_CPU:-200} cooldown=${TSGO_COOLDOWN:-900}
+  mkdir -p "$dir"
+  local now=$EPOCHSECONDS
+  ps -axo pid=,rss=,%cpu=,command= | grep -E 'native-preview.*lib/tsgo' | grep -v grep \
+  | while read -r pid rss cpuv rest; do
+      local gb=$(( rss/1048576.0 ))
+      (( gb >= mem_gb || cpuv >= cpu )) || continue          # below trigger
+      local cf="$dir/.last-$pid"
+      [[ -f "$cf" ]] && (( now - $(<"$cf") < cooldown )) && continue   # cooling down
+      print -r -- "$now" > "$cf"
+      _tsgo_snapshot "$pid" "$dir" "$gb" "$cpuv"
+    done
+}
+
+# Foreground watcher loop (for ad-hoc capture without launchd). Ctrl-C to stop.
+tsgo-watch() {
+  emulate -L zsh
+  local interval=${TSGO_INTERVAL:-60}
+  print -- "tsgo-watch: snapshot tsgo over ${TSGO_MEM_GB:-8}GB or ${TSGO_CPU:-200}% CPU"
+  print -- "  -> ${TSGO_TRACE_DIR:-$HOME/tsgo-traces}  every ${interval}s. Ctrl-C to stop."
+  while true; do tsgo-watch-once; sleep "$interval"; done
+}
+
 # Reap stale tsgo LSPs. No args: show the table + usage. With pids: SIGTERM them.
 # --over <GB>: SIGTERM every tsgo above that size (after a y/N confirm).
 # The owning editor/agent respawns the LSP on its next request (warm index lost).

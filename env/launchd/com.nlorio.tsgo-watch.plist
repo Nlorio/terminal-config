@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  tsgo spike recorder. Every 60s, runs `tsgo-watch-once` (from ~/.zsh_functions)
+  which writes a full trace for any tsgo over TSGO_MEM_GB / TSGO_CPU to
+  ~/tsgo-traces/. Catches runaways in the act, since they settle within a minute.
+
+  Install:   cp this to ~/Library/LaunchAgents/ && launchctl load -w <path>
+  Stop:      launchctl unload -w ~/Library/LaunchAgents/com.nlorio.tsgo-watch.plist
+  Tune:      edit TSGO_MEM_GB / TSGO_CPU below, then reload.
+  NOTE: paths are absolute (launchd doesn't expand ~) — adjust the username if
+  you're not nlorio.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nlorio.tsgo-watch</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-c</string>
+    <string>source "$HOME/.zsh_functions" &amp;&amp; tsgo-watch-once</string>
+  </array>
+
+  <key>StartInterval</key>
+  <integer>60</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd jobs get a minimal PATH; the recorder needs these tool dirs. -->
+    <key>PATH</key>
+    <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>TSGO_MEM_GB</key>
+    <string>8</string>
+    <key>TSGO_CPU</key>
+    <string>200</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/nlorio/tsgo-traces/watch.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nlorio/tsgo-traces/watch.err.log</string>
+</dict>
+</plist>
