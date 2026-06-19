@@ -238,6 +238,57 @@ tsgo-watch() {
   while true; do tsgo-watch-once; sleep "$interval"; done
 }
 
+# Idle eviction: reclaim memory from tsgo that have sat idle (≈0% CPU) for >= N
+# minutes, so inactive Claude/nvim sessions stop hogging ~18GB each. This is the
+# local stand-in for an idle-TTL that lspMcp/tsgo don't have. A reaped idle tsgo
+# stays gone (an inactive session makes no LSP requests) and respawns cold only
+# when you return and actually do TS work. Idleness is tracked across runs via
+# marker files in TSGO_TRACE_DIR, so a momentary pause between keystrokes can't
+# trigger a kill — it must stay idle for the whole window.
+#   tsgo-reap-idle [idle_minutes]   (default 20; or $TSGO_IDLE_MIN)
+# Tunables: TSGO_IDLE_CPU (%, default 3)  TSGO_IDLE_MIN_GB (default 2).
+tsgo-reap-idle() {
+  emulate -L zsh
+  zmodload zsh/datetime 2>/dev/null
+  local mins=${1:-${TSGO_IDLE_MIN:-20}}
+  local cpu_idle=${TSGO_IDLE_CPU:-3} min_gb=${TSGO_IDLE_MIN_GB:-2}
+  local dir=${TSGO_TRACE_DIR:-$HOME/tsgo-traces}
+  mkdir -p "$dir"
+  local now=$EPOCHSECONDS window=$(( mins*60 ))
+  local -A live
+  local rows=$(ps -axo pid=,rss=,%cpu=,command= | grep -E 'native-preview.*lib/tsgo' | grep -v grep)
+  local line pid rss cpuv rest gb marker since
+  while IFS= read -r line; do
+    [[ -z $line ]] && continue
+    read -r pid rss cpuv rest <<< "$line"
+    live[$pid]=1
+    marker="$dir/.idle-$pid"
+    gb=$(( rss/1048576.0 ))
+    # Active, or too small to bother: reset its idle clock and move on.
+    if (( cpuv > cpu_idle || gb < min_gb )); then
+      rm -f "$marker"
+      continue
+    fi
+    # Idle: stamp first-seen-idle, or reap once it's been idle the full window.
+    if [[ ! -f "$marker" ]]; then
+      print -r -- "$now" > "$marker"
+      continue
+    fi
+    since=$(<"$marker")
+    if (( now - since >= window )); then
+      kill -TERM "$pid" 2>/dev/null
+      rm -f "$marker"
+      print -- "[tsgo-reap-idle] reaped $pid — idle $(( (now-since)/60 ))m, holding ${gb%.*}GB (respawns on next request)"
+    fi
+  done <<< "$rows"
+  # Drop markers for pids that have since exited.
+  local f p
+  for f in "$dir"/.idle-*(N); do
+    p=${f:t}; p=${p#.idle-}
+    [[ -n ${live[$p]} ]] || rm -f "$f"
+  done
+}
+
 # Reap stale tsgo LSPs. No args: show the table + usage. With pids: SIGTERM them.
 # --over <GB>: SIGTERM every tsgo above that size (after a y/N confirm).
 # The owning editor/agent respawns the LSP on its next request (warm index lost).

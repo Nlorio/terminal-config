@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  tsgo spike recorder. Every 60s, runs `tsgo-watch-once` (from ~/.zsh_functions)
-  which writes a full trace for any tsgo over TSGO_MEM_GB / TSGO_CPU to
-  ~/tsgo-traces/. Catches runaways in the act, since they settle within a minute.
+  tsgo spike recorder + idle eviction. Every 60s (from ~/.zsh_functions):
+   - tsgo-watch-once: writes a full trace for any tsgo over TSGO_MEM_GB /
+     TSGO_CPU to ~/tsgo-traces/ (catches runaways in the act).
+   - tsgo-reap-idle:  SIGTERMs any tsgo idle (≈0% CPU) for >= TSGO_IDLE_MIN
+     minutes, so inactive sessions stop hogging memory (respawns on next use).
 
   Install:   cp this to ~/Library/LaunchAgents/ && launchctl load -w <path>
   Stop:      launchctl unload -w ~/Library/LaunchAgents/com.nlorio.tsgo-watch.plist
-  Tune:      edit TSGO_MEM_GB / TSGO_CPU below, then reload.
+  Tune:      edit the EnvironmentVariables below, then reload.
   NOTE: paths are absolute (launchd doesn't expand ~) — adjust the username if
   you're not nlorio.
 -->
@@ -20,7 +22,7 @@
   <array>
     <string>/bin/zsh</string>
     <string>-c</string>
-    <string>source "$HOME/.zsh_functions" &amp;&amp; tsgo-watch-once</string>
+    <string>source "$HOME/.zsh_functions" &amp;&amp; tsgo-watch-once; tsgo-reap-idle</string>
   </array>
 
   <key>StartInterval</key>
@@ -38,6 +40,9 @@
     <string>8</string>
     <key>TSGO_CPU</key>
     <string>200</string>
+    <!-- idle eviction: reap tsgo idle this many minutes (≈0% CPU). -->
+    <key>TSGO_IDLE_MIN</key>
+    <string>20</string>
   </dict>
 
   <key>StandardOutPath</key>
