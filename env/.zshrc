@@ -68,3 +68,11 @@ alias t3="n exec 25.8.2 npx t3"
 export PATH="$HOME/.local/share/mise/shims:$PATH"
 export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
 if command -v rv >/dev/null 2>&1; then eval "$(rv shell init zsh)"; fi
+export RIPGREP_CONFIG_PATH="/Users/nlorio/worktrees/nlorio--OBSERVABILITY-alert-hygiene-sync/.ripgreprc"
+# Install notion CLI completions. The notion wrapper prints "Using local notion
+# checkout ..." to stderr when the shell starts inside a *different* notion repo;
+# that stderr write lands after the p10k instant-prompt preamble and makes the
+# prompt jump. Drop stderr -- only stdout (the completion script) is needed here.
+eval "$('/Users/nlorio/.local/share/mise/installs/node/22.13.1/bin/node' -r '/Users/nlorio/worktrees/nlorio--OBSERVABILITY-alert-hygiene-sync/esbuild-runner.js' '/Users/nlorio/worktrees/nlorio--OBSERVABILITY-alert-hygiene-sync/src/cli/main/notion.ts' completion --install 2>/dev/null)"
+export PNPM_HOME=/Users/nlorio/Library/pnpm/
+export PATH="/Users/nlorio/Library/pnpm//bin:/Users/nlorio/Library/pnpm/:$PATH"
