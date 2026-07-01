@@ -157,6 +157,12 @@ mem-owners() {
 # Focused view: just the tsgo LSPs, sorted by memory. Wrapper over mem-owners.
 tsgo-owners() { mem-owners 50 'native-preview.*lib/tsgo'; }
 
+# All native tsgo LSP processes as "pid rss(KB) %cpu command" rows — the single
+# definition of "what is a tsgo" shared by every reaper/watcher/statusline below,
+# so the number you *see* and the set you *kill* can't drift apart. The awk
+# self-excludes (its own command line contains the pattern).
+_tsgo_ps() { ps -axo pid=,rss=,%cpu=,command= | awk '/native-preview.*lib\/tsgo/ && !/awk/'; }
+
 # Drill-down on one pid: is it a runaway worth killing, or legitimately busy?
 # Codifies the diagnosis that found a tsgo burning 1.6 cores + 16GB for a day.
 # Measures CPU two ways, because each lies on its own:
@@ -233,7 +239,7 @@ tsgo-watch-once() {
   local mem_gb=${TSGO_MEM_GB:-8} cpu=${TSGO_CPU:-200} cooldown=${TSGO_COOLDOWN:-900}
   mkdir -p "$dir"
   local now=$EPOCHSECONDS
-  ps -axo pid=,rss=,%cpu=,command= | grep -E 'native-preview.*lib/tsgo' | grep -v grep \
+  _tsgo_ps \
   | while read -r pid rss cpuv rest; do
       local gb=$(( rss/1048576.0 ))
       (( gb >= mem_gb || cpuv >= cpu )) || continue          # below trigger
@@ -271,7 +277,7 @@ tsgo-reap-idle() {
   mkdir -p "$dir"
   local now=$EPOCHSECONDS window=$(( mins*60 ))
   local -A live
-  local rows=$(ps -axo pid=,rss=,%cpu=,command= | grep -E 'native-preview.*lib/tsgo' | grep -v grep)
+  local rows=$(_tsgo_ps)
   local line pid rss cpuv rest gb marker since
   while IFS= read -r line; do
     [[ -z $line ]] && continue
@@ -291,15 +297,16 @@ tsgo-reap-idle() {
     fi
     since=$(<"$marker")
     if (( now - since >= window )); then
-      kill -TERM "$pid" 2>/dev/null
+      _tsgo_kill "$pid"                                 # TERM->KILL: a swap-stuck idle tsgo ignores plain TERM
       rm -f "$marker"
       print -- "[tsgo-reap-idle] reaped $pid — idle $(( (now-since)/60 ))m, holding ${gb%.*}GB (respawns on next request)"
     fi
   done <<< "$rows"
-  # Drop markers for pids that have since exited.
+  # Drop stale marker + cooldown files for pids that have since exited (both the
+  # .idle-* stamps here and the .last-* cooldown files tsgo-watch-once leaves).
   local f p
-  for f in "$dir"/.idle-*(N); do
-    p=${f:t}; p=${p#.idle-}
+  for f in "$dir"/.idle-*(N) "$dir"/.last-*(N); do
+    p=${f:t}; p=${p#.idle-}; p=${p#.last-}
     [[ -n ${live[$p]} ]] || rm -f "$f"
   done
 }
@@ -319,8 +326,8 @@ tsgo-reap() {
   local -a targets
   if [[ $1 == --over ]]; then
     local gb=${2:?need a GB threshold} limit
-    limit=$(( gb * 1024 * 1024 ))   # KB
-    targets=(${(f)"$(ps -axo pid=,rss=,command= | grep -E 'native-preview.*lib/tsgo' | grep -v grep | awk -v l=$limit '$2>l {print $1}')"})
+    limit=$(( gb * 1048576 ))   # KB
+    targets=(${(f)"$(_tsgo_ps | awk -v l=$limit '$2>l {print $1}')"})
     (( ${#targets} )) || { print -- "No tsgo over ${gb}GB."; return 0; }
     print -- "Will SIGTERM these tsgo LSPs (>${gb}GB):"
     ps -o pid=,rss= -p ${(j: :)targets} 2>/dev/null | awk '{printf "  %-7s %dMB\n",$1,$2/1024}'
@@ -331,8 +338,8 @@ tsgo-reap() {
     targets=($@)
   fi
 
-  kill -TERM ${(j: :)targets} 2>/dev/null \
-    && print -- "Sent SIGTERM to: ${(j:, :)targets}  (LSP respawns on next request)"
+  local v; for v in $targets; do _tsgo_kill "$v"; done   # TERM->KILL each; busy tsgo ignore plain TERM
+  print -- "Reaped: ${(j:, :)targets}  (LSP respawns on next request)"
 }
 
 # SIGTERM a pid, escalate to SIGKILL if it's still alive after `grace` seconds.
@@ -361,13 +368,16 @@ tsgo-reap-budget() {
   local floor_kb=$(( ${TSGO_REAP_FLOOR_GB:-2} * 1048576 ))
   local budget_kb=$(( budget * 1048576 ))
   local dir=${TSGO_TRACE_DIR:-$HOME/tsgo-traces}; mkdir -p "$dir"
-  local data=$(ps -axo pid=,rss=,%cpu=,command= | grep -E 'native-preview.*lib/tsgo' | grep -v grep)
+  local data=$(_tsgo_ps)
   [[ -n $data ]] || return 0
   local total_kb=$(print -r -- "$data" | awk '{s+=$2} END{print s+0}')
   (( total_kb <= budget_kb )) && return 0
+  # One log sink: the real log when acting, /dev/null on a dry run. tee still
+  # echoes to stdout either way, so previews show without polluting the log.
   local log="$dir/reap-budget.log" stamp=$(strftime '%Y-%m-%d %H:%M:%S' $EPOCHSECONDS)
+  (( dry )) && log=/dev/null
   printf '[%s] tsgo total %.1fGB > budget %dGB — reclaiming (idle-first)\n' \
-    "$stamp" "$(( total_kb/1048576.0 ))" "$budget" | { (( dry )) && cat || tee -a "$log" }
+    "$stamp" "$(( total_kb/1048576.0 ))" "$budget" | tee -a "$log"
   # victims above the floor as "active(0/1) rss pid", sorted idle-first then largest.
   local victims=$(print -r -- "$data" | awk -v ic=$idle_cpu -v fl=$floor_kb \
     '$2>=fl { print (($3>ic)?1:0), $2, $1 }' | sort -k1,1n -k2,2nr)
@@ -401,13 +411,12 @@ tsgo-reap-budget() {
 # Collect a pid and all its descendants (recursive).
 _notion_run_tree() { local p=$1 c; print -- $p; for c in $(pgrep -P $p 2>/dev/null); do _notion_run_tree $c; done }
 
-# Base port for an instance: scan its tree for --portOffset=N (->3000+N), else
-# --port=3NNN, else default 3000.
+# Base port for an instance, parsed from the concatenated argv of its process
+# tree ($1): --portOffset=N (->3000+N), else --port=3NNN, else default 3000. Takes
+# the args string so callers can reuse a `ps` they already ran (no re-walk).
 _notion_run_port() {
-  local pid=$1 tree args off
-  tree=(${(f)"$(_notion_run_tree $pid)"})
-  args=$(ps -ww -o args= -p ${(j:,:)tree} 2>/dev/null)
-  if [[ $args == *--portOffset=* ]]; then off=${${args##*--portOffset=}%%[^0-9]*}; print -- $((3000+off))
+  local args=$1
+  if [[ $args == *--portOffset=* ]]; then print -- $((3000+${${args##*--portOffset=}%%[^0-9]*}))
   elif [[ $args =~ '--port=(3[0-9][0-9][0-9])' ]]; then print -- $match[1]
   else print -- 3000; fi
 }
@@ -417,15 +426,16 @@ _notion_run_port() {
 # relative gauge of which instance to close, not an absolute footprint.)
 notion-runs() {
   emulate -L zsh
-  local pid pgid etime rest ws tree n rss port
+  local pid pgid etime rest ws tree n info rss port
   printf '%-7s %-6s %-11s %-6s %-7s %s\n' PID PORT AGE PROCS MEM WORKSPACE
   ps -axo pid=,pgid=,etime=,args= | grep -E '/src/cli/notion run\b' | grep -v grep | \
   while read -r pid pgid etime rest; do
     ws=${rest#*bash }; ws=${ws%%/src/cli/notion*}; ws=${ws##*/}
-    tree=(${(f)"$(_notion_run_tree $pid)"})
+    tree=(${(f)"$(_notion_run_tree $pid)"})       # walk the tree once...
     n=${#tree}
-    rss=$(ps -o rss= -p ${(j:,:)tree} 2>/dev/null | awk '{s+=$1} END{printf "%.1fG", s/1048576}')
-    port=$(_notion_run_port $pid)
+    info=$(ps -o rss=,args= -p ${(j:,:)tree} 2>/dev/null)   # ...and one ps for both RSS + port
+    rss=$(print -r -- "$info" | awk '{s+=$1} END{printf "%.1fG", s/1048576}')
+    port=$(_notion_run_port "$info")
     printf '%-7s %-6s %-11s %-6s %-7s %s\n' "$pid" "$port" "$etime" "$n" "$rss" "$ws"
   done
 }
@@ -440,17 +450,16 @@ notion-run-kill() {
   emulate -L zsh
   local dry=0; [[ $1 == -n ]] && { dry=1; shift }
   local sel=${1:?usage: notion-run-kill [-n] <launcher-pid|workspace-substring|port>}
+  # Resolve $sel against every launcher's pid, base port, or workspace in one
+  # pass (no special numeric branch — a pid matches on $pid, a port on $port).
   local -a launchers
-  if [[ $sel == <-> ]] && ps -o args= -p $sel 2>/dev/null | grep -q '/src/cli/notion run'; then
-    launchers=($sel)                       # explicit launcher pid
-  else                                     # resolve by workspace substring or base port
-    local pid rest ws port
-    while read -r pid rest; do
-      ws=${rest#*bash }; ws=${ws%%/src/cli/notion*}
-      port=$(_notion_run_port $pid)
-      [[ ${ws:t} == *$sel* || $port == $sel ]] && launchers+=($pid)
-    done < <(ps -axo pid=,args= | grep -E '/src/cli/notion run\b' | grep -v grep)
-  fi
+  local pid rest ws tree port
+  while read -r pid rest; do
+    ws=${rest#*bash }; ws=${ws%%/src/cli/notion*}
+    tree=(${(f)"$(_notion_run_tree $pid)"})
+    port=$(_notion_run_port "$(ps -ww -o args= -p ${(j:,:)tree} 2>/dev/null)")
+    [[ $pid == $sel || $port == $sel || ${ws:t} == *$sel* ]] && launchers+=($pid)
+  done < <(ps -axo pid=,args= | grep -E '/src/cli/notion run\b' | grep -v grep)
   (( ${#launchers} )) || { print "no notion run instance matching: $sel"; return 1 }
   local lp tree
   for lp in $launchers; do
