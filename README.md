@@ -104,10 +104,13 @@ terminal-config/
 ├── env/
 │   ├── .tmux.conf            # Tmux configuration
 │   ├── .zsh_profile          # Worktree functions (gwa, gwr, gwb, gwrecover, gwbrecover)
-│   ├── .zsh_functions        # Theme-switch functions (dark/light-ui, dark/light-term)
+│   ├── .zsh_functions        # Theme switch + process/memory triage & tsgo reapers
+│   │                         #   (mem-owners, proc-impact, tsgo-reap*, notion-runs)
 │   ├── .zshrc                # Zsh configuration
 │   ├── p10k-dark.zsh         # Powerlevel10k config (dark)
 │   ├── p10k-light.zsh        # Powerlevel10k config (light)
+│   ├── launchd/
+│   │   └── com.nlorio.tsgo-watch.plist  # tsgo spike recorder + idle/budget reaper (60s)
 │   ├── ghostty/
 │   │   └── config            # Ghostty terminal config
 │   ├── lazyvim/
@@ -270,6 +273,68 @@ gwbr my-boxy
 ### `gwbrecover` - Interactive Boxy Recovery
 
 Walks `notion boxy ls` and, for each remote boxy without a corresponding local `boxy-<name>` tmux session, offers to recreate the session (re-staging role files and TODO) or destroy the boxy. Destroys run asynchronously to keep the prompt loop snappy.
+
+## Process & Memory Management
+
+Running many concurrent editor + agent sessions against a large monorepo means many
+`tsgo` (the Go TypeScript LSP) processes, each of which can grow to ~18–24GB and
+never frees its heap — enough stale sessions will swap-thrash the machine. These
+helpers (in `.zsh_functions`) triage, reap, and cap that usage. A launchd agent
+(`env/launchd/com.nlorio.tsgo-watch.plist`) runs the automated pieces every 60s.
+
+### Triage — what's eating memory/CPU
+
+- **`mem-owners [N] [regex]`** — top-N heavy processes with a system-pressure line
+  (compressor/swap — the *real* slowdown signal, not raw RSS), each mapped back to
+  the owning tmux pane + app, with a `⚠ runaway?` flag for high mem **and** CPU.
+- **`tsgo-owners`** — the tsgo LSPs only, by memory + owning session (`mem-owners`
+  filtered to native tsgo).
+- **`proc-impact <pid> [secs]`** — drill-down on one process: precise CPU over a
+  window vs. lifetime average, memory, owner, and a kill/keep verdict.
+
+### Reap — reclaim memory (tsgo respawns cold on next LSP request)
+
+- **`tsgo-reap [<pid>…]`** — with no args, prints the table + usage; with pids,
+  kills them. `tsgo-reap --over <GB>` kills every tsgo above a size (after a y/N).
+- **`tsgo-reap-idle [mins]`** — SIGTERM tsgo idle (≈0% CPU) for ≥ N minutes
+  (default 20). The local stand-in for the idle-TTL that lspMcp/tsgo lack.
+- **`tsgo-reap-budget [-n] [GB]`** — enforce a **total**-RSS ceiling across all
+  tsgo (default `TSGO_BUDGET_GB`=40). Reaps **idle-first** — so if idle memory
+  covers the overage, the session you're actively in is spared — then
+  largest-active, until back under budget. `-n` previews.
+- All kills escalate SIGTERM → SIGKILL via `_tsgo_kill` (a busy/swap-stuck tsgo
+  ignores plain SIGTERM).
+
+### Watch / record
+
+- **`tsgo-watch [interval]`** — foreground loop that snapshots any tsgo over
+  `TSGO_MEM_GB` (8) / `TSGO_CPU` (200%) to `~/tsgo-traces/` (pressure + proc-impact
+  + owner chain + open-dir scope + a CPU sample). Runaways settle within a minute,
+  so this catches the "why" in the act. `tsgo-watch-once` is a single pass.
+- **launchd agent** (`com.nlorio.tsgo-watch`): every 60s runs `tsgo-watch-once`
+  (record spikes) → `tsgo-reap-idle` (evict long-idle) → `tsgo-reap-budget`
+  (enforce the ceiling). Install: `cp env/launchd/com.nlorio.tsgo-watch.plist
+  ~/Library/LaunchAgents/ && launchctl load -w <path>`. Tunables live in the
+  plist's `EnvironmentVariables` (`TSGO_MEM_GB`, `TSGO_CPU`, `TSGO_IDLE_MIN`,
+  `TSGO_BUDGET_GB`). Note: launchd can't read `~/Documents` (TCC), so the agent
+  sources a copy of `.zsh_functions` under `~/Library/Application Support/`; an
+  interactive shell refreshes that copy whenever the repo file changes.
+- **Status line** (`~/.claude/statusline-tsgo.sh`, wired via `~/.claude/settings.json`)
+  shows `tsgo: NN GB (N procs)` in the Claude Code prompt — dim ≤60% of budget,
+  yellow over that, red at the budget. The glanceable early warning before the
+  enforcer acts. Uses the same "what is a tsgo" match as the reapers.
+
+### `notion-runs` / `notion-run-kill` — dev-server instances
+
+A `notion run` forks ~15 children that inherit its listening sockets, so `lsof`
+maps every 3xxx port to every child. These key off the launcher instead:
+
+- **`notion-runs`** — lists running `notion run` instances: pid, base **port**
+  (read from `--portOffset`/`--port` in the process tree), age, process count,
+  summed memory, and workspace.
+- **`notion-run-kill [-n] <pid|workspace|port>`** — closes an instance by killing
+  **only the launcher's descendant tree** (never your shells/claude/tmux). Matches
+  on launcher pid, base port, or a workspace substring. `-n` previews.
 
 ## Shared Skills
 
