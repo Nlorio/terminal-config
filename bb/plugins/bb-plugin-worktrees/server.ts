@@ -7,6 +7,7 @@
 // workspace), open a terminal there, archive an environment's threads, and
 // remove genuinely stale external worktrees.
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
 import { z } from "zod";
@@ -182,10 +183,25 @@ export default async function plugin(bb: BbPluginApi) {
 
       const projects = await bb.sdk.projects.list({ includePersonal: false });
       for (const project of projects) {
-        const source = (project.sources ?? []).find(
-          (s) => (s as { type?: string }).type === "local_path" && (s as { path?: string }).path,
-        ) as { path?: string; hostId?: string } | undefined;
-        if (!source?.path) continue;
+        // A project can have sources on several hosts (e.g. a boxy machine).
+        // git runs on the server machine, so scan only sources whose path
+        // exists here; remote-host sources are skipped, not errors.
+        const sources = (project.sources ?? []).filter(
+          (s) =>
+            (s as { type?: string }).type === "local_path" &&
+            (s as { path?: string }).path,
+        ) as { path: string; hostId?: string }[];
+        const source = sources.find((s) =>
+          existsSync(s.path.replace(/\/+$/, "")),
+        );
+        if (!source) {
+          if (sources.length > 0) {
+            errors.push(
+              `${project.name}: no source path exists on this machine (remote-only sources skipped)`,
+            );
+          }
+          continue;
+        }
         const root = source.path.replace(/\/+$/, "");
         let worktrees: GitWorktree[];
         try {
