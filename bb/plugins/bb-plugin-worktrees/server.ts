@@ -57,6 +57,16 @@ export const rpcContract = defineRpcContract({
       .strict(),
     output: z.object({ threadId: z.string() }),
   },
+  adoptWorktree: {
+    input: z
+      .object({
+        projectId: z.string(),
+        hostId: z.string().nullable(),
+        path: z.string(),
+      })
+      .strict(),
+    output: z.object({ threadId: z.string() }),
+  },
   openTerminal: {
     input: z
       .object({ hostId: z.string(), path: z.string(), title: z.string() })
@@ -246,6 +256,25 @@ export default async function plugin(bb: BbPluginApi) {
         }
       }
       return { worktrees: rows, scannedAt: Date.now(), errors };
+    },
+
+    // Register an external worktree as a bb environment so it appears in the
+    // composer's "Existing worktree" picker. Environments are only created by
+    // thread provisioning, so this spawns a hidden one-shot thread into the
+    // path; the discovered environment (isWorktree auto-detected) persists.
+    async adoptWorktree({ projectId, hostId, path }) {
+      const thread = await bb.sdk.threads.spawn({
+        projectId,
+        prompt: "Reply with exactly: OK. Do nothing else.",
+        title: `adopt worktree: ${path.split("/").pop()}`,
+        visibility: "hidden",
+        environment: {
+          type: "host",
+          ...(hostId ? { hostId } : {}),
+          workspace: { type: "unmanaged", path },
+        },
+      } as Parameters<typeof bb.sdk.threads.spawn>[0]);
+      return { threadId: thread.id };
     },
 
     async startThread({ projectId, hostId, path, prompt }) {
