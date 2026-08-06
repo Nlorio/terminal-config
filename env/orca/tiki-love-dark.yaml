@@ -1,0 +1,29 @@
+# Warp-format terminal theme for Orca ("Import Themes" -> "Import theme YAML").
+# Ported from the Ghostty theme at env/ghostty/themes/tiki-love-dark.
+# Orca's Ghostty importer cannot resolve `theme = <name>` references, so the
+# palette is inlined here instead.
+name: tiki-love-dark
+details: darker
+background: "#1A1410"
+foreground: "#E8D5B7"
+accent: "#F0A84C"
+cursor: "#F0A84C"
+terminal_colors:
+  normal:
+    black: "#1A1E14"
+    red: "#E85A4F"
+    green: "#6AAF5C"
+    yellow: "#F0A84C"
+    blue: "#8A9A6A"
+    magenta: "#D4843E"
+    cyan: "#5C9A7A"
+    white: "#E8D5B7"
+  bright:
+    black: "#4A5440"
+    red: "#F07A6F"
+    green: "#8ACF7A"
+    yellow: "#F0C06C"
+    blue: "#A0B08A"
+    magenta: "#E8A060"
+    cyan: "#7AB89A"
+    white: "#F4E8D0"

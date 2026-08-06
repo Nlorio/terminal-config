@@ -1,4 +1,9 @@
-neofetch
+# Only draw neofetch on a real TTY. Tools that capture the shell environment
+# (bb's host daemon, Claude Code snapshots) source this file with stdout piped;
+# neofetch's ANSI art then gets concatenated into captured vars like $PATH,
+# and 12KB PATH "entries" stack-smash zsh's findcmd (SIGABRT on any lookup of
+# a nonexistent command).
+[[ -t 1 ]] && neofetch
 
 # Suppress instant prompt warning for console output during init
 typeset -g POWERLEVEL9K_INSTANT_PROMPT=quiet

@@ -90,6 +90,11 @@ link:
 	@echo "  ~/.config/ghostty/themes/ <- env/ghostty/themes/ (copied)"
 	@echo "  ~/.config/ghostty/shaders/ <- env/ghostty/shaders/ (copied)"
 
+	@# Orca (keybindings; theme yaml is imported via Orca settings, not symlinked)
+	@mkdir -p $(HOME)/.orca
+	@ln -sfn $(REPO_DIR)/env/orca/keybindings.json $(HOME)/.orca/keybindings.json
+	@echo "  ~/.orca/keybindings.json -> env/orca/keybindings.json"
+
 	@# Neofetch
 	@ln -sfn $(REPO_DIR)/neofetch/config.conf $(HOME)/.config/neofetch/config.conf
 	@echo "  ~/.config/neofetch/config.conf -> neofetch/config.conf"
@@ -114,4 +119,5 @@ unlink:
 	@rm -rf $(HOME)/.config/ghostty/themes
 	@rm -rf $(HOME)/.config/ghostty/shaders
 	@rm -f $(HOME)/.config/neofetch/config.conf
+	@rm -f $(HOME)/.orca/keybindings.json
 	@echo "Symlinks removed."

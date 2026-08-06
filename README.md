@@ -72,6 +72,10 @@ ln -sfn ~/Documents/config/terminal-config/env/lazyvim/nvim ~/.config/nvim
 mkdir -p ~/.config/ghostty
 ln -sfn ~/Documents/config/terminal-config/env/ghostty/config ~/.config/ghostty/config
 
+# Orca (keybindings; read at startup from ~/.orca/keybindings.json)
+mkdir -p ~/.orca
+ln -sfn ~/Documents/config/terminal-config/env/orca/keybindings.json ~/.orca/keybindings.json
+
 # Neofetch
 mkdir -p ~/.config/neofetch
 ln -sfn ~/Documents/config/terminal-config/neofetch/config.conf ~/.config/neofetch/config.conf
