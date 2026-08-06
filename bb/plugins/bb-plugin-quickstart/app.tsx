@@ -1,12 +1,10 @@
 // bb-plugin-quickstart — a single "Quickstart" entry in the thread panel
 // Actions list. The panel holds every preset: built-in terminals (tmux,
-// dev server, nvim), a localhost browser view (rendered inline in the same
-// tab), and custom presets from plugin settings.
+// dev server, nvim) and custom presets from plugin settings.
 import { useEffect, useState } from "react";
 import { definePluginApp, useRpc } from "@bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "./server";
-import { Button } from "@/components/ui/button";
 
 const BUILTIN_PRESETS = [
   { title: "tmux", command: "tmux new -A -s bb" },
@@ -14,37 +12,12 @@ const BUILTIN_PRESETS = [
   { title: "nvim", command: "nvim ." },
 ];
 
-const BROWSER_URL = "http://localhost:3000";
-
-function BrowserView({ url, onBack }: { url: string; onBack: () => void }) {
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
-        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onBack}>
-          ← Presets
-        </Button>
-        <span className="font-mono">{url}</span>
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          className="ml-auto text-primary hover:underline"
-        >
-          Open externally
-        </a>
-      </div>
-      <iframe src={url} title={url} className="h-full w-full flex-1 border-0 bg-white" />
-    </div>
-  );
-}
-
 function QuickstartPanel({ threadId }: { threadId: string; params: unknown }) {
   const rpc = useRpc<typeof rpcContract>();
   const [customPresets, setCustomPresets] = useState<
     { title: string; command: string }[]
   >([]);
   const [busy, setBusy] = useState<string | null>(null);
-  const [browserOpen, setBrowserOpen] = useState(false);
 
   useEffect(() => {
     void rpc.call("listPresets").then((result) => setCustomPresets(result.presets));
@@ -61,10 +34,6 @@ function QuickstartPanel({ threadId }: { threadId: string; params: unknown }) {
     } finally {
       setBusy(null);
     }
-  }
-
-  if (browserOpen) {
-    return <BrowserView url={BROWSER_URL} onBack={() => setBrowserOpen(false)} />;
   }
 
   const renderPreset = (preset: { title: string; command: string }) => (
@@ -91,19 +60,6 @@ function QuickstartPanel({ threadId }: { threadId: string; params: unknown }) {
           Terminals
         </div>
         {BUILTIN_PRESETS.map(renderPreset)}
-        <div className="pt-2 text-xs font-medium uppercase tracking-wide text-subtle-foreground">
-          Browser
-        </div>
-        <button
-          type="button"
-          className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-left hover:bg-state-hover"
-          onClick={() => setBrowserOpen(true)}
-        >
-          <span className="text-sm font-medium">localhost:3000</span>
-          <span className="ml-auto font-mono text-xs text-muted-foreground">
-            renders here in this tab
-          </span>
-        </button>
         {customPresets.length > 0 ? (
           <>
             <div className="pt-2 text-xs font-medium uppercase tracking-wide text-subtle-foreground">
