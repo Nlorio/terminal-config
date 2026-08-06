@@ -10,6 +10,8 @@ Personal terminal configuration for macOS. All dotfiles are symlinked to this re
 - **lazyvim** - Neovim distribution with LSP, debugging, and plugins
 - **tmux** - Terminal multiplexer with 256-color support
 - **vim** - Classic vim with pathogen plugins
+- **bb** - Agentic IDE configuration: custom theme, keyboard overrides, and path-installed plugins (see [bb/README.md](bb/README.md))
+- **orca** - Keybindings + terminal theme for the Orca agent IDE
 - **skills** - Shared Claude Code / Codex skills, symlinked into both tool dirs
 
 ## Prerequisites
@@ -105,6 +107,11 @@ terminal-config/
 ├── .vimrc                    # Vim configuration (pathogen, gruvbox)
 ├── Makefile                  # Automated setup commands
 ├── README.md
+├── bb/                       # bb (agentic IDE) config — see bb/README.md
+│   ├── setup.sh              # Bootstrap: theme + keyboard overrides + plugin installs
+│   ├── keyboard-overrides.json
+│   ├── theme/tiki-love-dark/ # Custom app palette (Ghostty port)
+│   └── plugins/              # Custom plugins, path-installed (live-editable)
 ├── env/
 │   ├── .tmux.conf            # Tmux configuration
 │   ├── .zsh_profile          # Worktree functions (gwa, gwr, gwb, gwrecover, gwbrecover)
@@ -178,6 +185,63 @@ Classic vim setup with:
 Minimal config with 256-color terminal support. The session picker (`<prefix> s`)
 is sorted by name rather than by activity time, so numeric-prefixed sessions
 stay in a stable, predictable order.
+
+### bb (agentic IDE)
+
+Everything customizing [bb](bb/README.md) lives in `bb/`. To leverage it on a
+new machine, start the bb server and run the bootstrap (idempotent, safe to
+re-run):
+
+```bash
+./bb/setup.sh
+```
+
+That one script applies all three layers:
+
+- **Theme** — symlinks `bb/theme/tiki-love-dark/` (the Ghostty Tiki Love Dark
+  port: dark faithful, light derived cream, full ANSI terminal palette) into
+  `~/.bb/theme/` and activates it. Edit the palette here, then re-run
+  `bb theme set tiki-love-dark` to pick up changes.
+- **Keyboard overrides** — replays `bb/keyboard-overrides.json` (tmux-flavored
+  pane chords: `ctrl+alt+z` zoom, `ctrl+alt+x` kill, `ctrl+alt+o` cycle,
+  `ctrl+alt+1-8` select) via `bb settings keyboard set`. After changing
+  bindings in bb, refresh the export with
+  `bb settings keyboard list --json | jq .overrides`.
+- **Plugins** — path-installs every plugin under `bb/plugins/`, so bb loads
+  them live from this repo. The edit loop is: change the source here, then
+  `bb plugin reload <id>` — no reinstall.
+
+Custom plugins:
+
+- **`bb-plugin-worktrees`** — worktree ↔ thread dashboard: every git worktree
+  (bb-managed *and* external, e.g. orca) with project, last-touched staleness,
+  and adopt/cleanup actions. Stale-while-revalidate: shows the cached scan
+  instantly and rescans in the background.
+- **`bb-plugin-notion-ci`** — PR + CI dashboard for notion-next/notion-data
+  (gh-backed; search, Mine/author filters, status chips, deploy-console links,
+  `bb notion-ci prs|sync` CLI, 5-min sync cron). Replaces the official github
+  plugin, whose sync breaks on repos with issues disabled.
+- **`bb-plugin-activity-monitor`** — resource manager: process tree grouped by
+  project/worktree with rollups + sparklines, flat view, kill actions.
+- **`bb-plugin-quickstart`** — one-click thread presets: tmux, dev server, and
+  nvim terminals plus a localhost browser tab.
+- **`bb-plugin-nvim-opener`** — fileOpener: code files open in a bb terminal
+  running nvim in the file's worktree (enable under Settings → File openers).
+- **`bb-plugin-boxy-prefix`** — prefixes thread titles with `boxy - ` when the
+  thread runs on a boxy host, so remote threads sort together.
+
+What is *not* in this repo (it's bb server state in `~/.bb/bb.db`): theme
+selection, the live keyboard overrides (this repo holds the export), plugin
+settings (`bb plugin config <id>`), and projects/threads/terminals. See
+[bb/README.md](bb/README.md) for the full layout.
+
+### Orca
+
+`env/orca/` holds the Orca agent IDE config: `keybindings.json` (symlinked to
+`~/.orca/keybindings.json` by `make link`; read at startup) and
+`tiki-love-dark.yaml`, a Warp-format port of the Ghostty theme — import it via
+Orca settings → "Import theme YAML" (Orca's Ghostty importer can't resolve
+`theme = <name>` references, so the palette is inlined).
 
 ## Theme Switching
 
