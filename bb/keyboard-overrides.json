@@ -1,0 +1,123 @@
+[
+  {
+    "command": "pane.maximize.toggle",
+    "shortcut": {
+      "key": "z",
+      "mod": false,
+      "meta": false,
+      "control": true,
+      "alt": true,
+      "shift": false
+    }
+  },
+  {
+    "command": "pane.close",
+    "shortcut": {
+      "key": "x",
+      "mod": false,
+      "meta": false,
+      "control": true,
+      "alt": true,
+      "shift": false
+    }
+  },
+  {
+    "command": "pane.focus.next",
+    "shortcut": {
+      "key": "o",
+      "mod": false,
+      "meta": false,
+      "control": true,
+      "alt": true,
+      "shift": false
+    }
+  },
+  {
+    "command": "pane.focus.1",
+    "shortcut": {
+      "key": "1",
+      "mod": false,
+      "meta": false,
+      "control": true,
+      "alt": true,
+      "shift": false
+    }
+  },
+  {
+    "command": "pane.focus.2",
+    "shortcut": {
+      "key": "2",
+      "mod": false,
+      "meta": false,
+      "control": true,
+      "alt": true,
+      "shift": false
+    }
+  },
+  {
+    "command": "pane.focus.3",
+    "shortcut": {
+      "key": "3",
+      "mod": false,
+      "meta": false,
+      "control": true,
+      "alt": true,
+      "shift": false
+    }
+  },
+  {
+    "command": "pane.focus.4",
+    "shortcut": {
+      "key": "4",
+      "mod": false,
+      "meta": false,
+      "control": true,
+      "alt": true,
+      "shift": false
+    }
+  },
+  {
+    "command": "pane.focus.5",
+    "shortcut": {
+      "key": "5",
+      "mod": false,
+      "meta": false,
+      "control": true,
+      "alt": true,
+      "shift": false
+    }
+  },
+  {
+    "command": "pane.focus.6",
+    "shortcut": {
+      "key": "6",
+      "mod": false,
+      "meta": false,
+      "control": true,
+      "alt": true,
+      "shift": false
+    }
+  },
+  {
+    "command": "pane.focus.7",
+    "shortcut": {
+      "key": "7",
+      "mod": false,
+      "meta": false,
+      "control": true,
+      "alt": true,
+      "shift": false
+    }
+  },
+  {
+    "command": "pane.focus.8",
+    "shortcut": {
+      "key": "8",
+      "mod": false,
+      "meta": false,
+      "control": true,
+      "alt": true,
+      "shift": false
+    }
+  }
+]
