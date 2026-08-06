@@ -39,12 +39,16 @@ const worktreeSchema = z.object({
 export type WorktreeRow = z.infer<typeof worktreeSchema>;
 
 export const rpcContract = defineRpcContract({
+  // Stale-while-revalidate: returns the cached snapshot immediately (kicking
+  // a background rescan unless kick=false); scans synchronously only when no
+  // snapshot exists yet. A finished rescan publishes "worktrees-updated".
   listWorktrees: {
-    input: z.null(),
+    input: z.object({ kick: z.boolean() }).strict(),
     output: z.object({
       worktrees: z.array(worktreeSchema),
       scannedAt: z.number(),
       errors: z.array(z.string()),
+      refreshing: z.boolean(),
     }),
   },
   startThread: {
@@ -121,9 +125,17 @@ function parseWorktreeList(porcelain: string): GitWorktree[] {
   return result;
 }
 
+interface Snapshot {
+  worktrees: WorktreeRow[];
+  scannedAt: number;
+  errors: string[];
+}
+
 export default async function plugin(bb: BbPluginApi) {
-  bb.rpc.register(rpcContract, {
-    async listWorktrees() {
+  // In-flight guard so concurrent panel opens share one rescan.
+  let refreshing: Promise<Snapshot> | null = null;
+
+  async function scan(): Promise<Snapshot> {
       const errors: string[] = [];
       const rows: WorktreeRow[] = [];
 
@@ -272,24 +284,63 @@ export default async function plugin(bb: BbPluginApi) {
         }
       }
       return { worktrees: rows, scannedAt: Date.now(), errors };
+  }
+
+  async function refreshSnapshot(): Promise<Snapshot> {
+    if (refreshing) return refreshing;
+    refreshing = (async () => {
+      try {
+        const snapshot = await scan();
+        await bb.storage.kv.set("snapshot", snapshot);
+        bb.realtime.publish("worktrees-updated", {
+          scannedAt: snapshot.scannedAt,
+        });
+        return snapshot;
+      } finally {
+        refreshing = null;
+      }
+    })();
+    return refreshing;
+  }
+
+  bb.rpc.register(rpcContract, {
+    async listWorktrees({ kick }) {
+      const cached = await bb.storage.kv.get<Snapshot>("snapshot");
+      if (!cached) {
+        // First load ever: scan synchronously so the panel has real data.
+        const snapshot = await refreshSnapshot();
+        return { ...snapshot, refreshing: false };
+      }
+      if (kick) {
+        void refreshSnapshot().catch((error) => {
+          bb.log.warn(
+            `background rescan failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      }
+      return { ...cached, refreshing: kick || refreshing !== null };
     },
 
     // Register an external worktree as a bb environment so it appears in the
     // composer's "Existing worktree" picker. Environments are only created by
-    // thread provisioning, so this spawns a hidden one-shot thread into the
-    // path; the discovered environment (isWorktree auto-detected) persists.
+    // thread provisioning, AND the picker builds its candidates from live
+    // thread rows — so the anchor thread must be visible and persistent
+    // (hidden anchors get cleaned up and the candidate disappears).
     async adoptWorktree({ projectId, hostId, path }) {
+      const name = path.split("/").pop() ?? path;
       const thread = await bb.sdk.threads.spawn({
         projectId,
-        prompt: "Reply with exactly: OK. Do nothing else.",
-        title: `adopt worktree: ${path.split("/").pop()}`,
-        visibility: "hidden",
+        prompt:
+          "This thread anchors this worktree in bb so it can be selected in the new-thread composer. Reply with exactly: OK.",
+        title: `worktree: ${name}`,
+        visibility: "visible",
         environment: {
           type: "host",
           ...(hostId ? { hostId } : {}),
           workspace: { type: "unmanaged", path },
         },
       } as Parameters<typeof bb.sdk.threads.spawn>[0]);
+      void refreshSnapshot().catch(() => {});
       return { threadId: thread.id };
     },
 
@@ -319,6 +370,7 @@ export default async function plugin(bb: BbPluginApi) {
     async archiveThreads({ environmentId }) {
       try {
         await bb.sdk.environments.archiveThreads({ environmentId });
+        void refreshSnapshot().catch(() => {});
         return { ok: true, message: "Archived the environment's threads." };
       } catch (error) {
         return {
@@ -338,6 +390,7 @@ export default async function plugin(bb: BbPluginApi) {
         args.push(path);
         await git(rootPath, args);
         bb.log.info(`removed worktree ${path}${force ? " (forced)" : ""}`);
+        void refreshSnapshot().catch(() => {});
         return { ok: true, message: `Removed ${path}.` };
       } catch (error) {
         return {
