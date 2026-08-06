@@ -6,6 +6,7 @@
 // with rollup totals and per-group history for sparklines. Kill actions
 // stay per-process.
 import { execFile } from "node:child_process";
+import { cpus } from "node:os";
 import { promisify } from "node:util";
 import { defineRpcContract, type BbPluginApi } from "@bb/plugin-sdk";
 import { z } from "zod";
@@ -43,6 +44,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({
       groups: z.array(groupSchema),
       totalCpu: z.number(),
+      cpuCores: z.number(),
       totalRssMb: z.number(),
       sampledAt: z.number(),
     }),
@@ -328,6 +330,7 @@ export default async function plugin(bb: BbPluginApi) {
     return {
       groups,
       totalCpu: Math.round(totalCpu * 10) / 10,
+      cpuCores: cpus().length,
       totalRssMb,
       sampledAt: Date.now(),
     };

@@ -201,9 +201,11 @@ function GroupCard({
 function Monitor() {
   const rpc = useRpc<typeof rpcContract>();
   const [groups, setGroups] = useState<GroupRow[]>([]);
-  const [totals, setTotals] = useState<{ cpu: number; rssMb: number } | null>(
-    null,
-  );
+  const [totals, setTotals] = useState<{
+    cpu: number;
+    cores: number;
+    rssMb: number;
+  } | null>(null);
   const [flatRows, setFlatRows] = useState<ProcessRow[]>([]);
   const [sampledAt, setSampledAt] = useState<number | null>(null);
   const [filter, setFilter] = useState("");
@@ -219,7 +221,11 @@ function Monitor() {
     if (viewRef.current === "tree") {
       const result = await rpc.call("sample");
       setGroups(result.groups);
-      setTotals({ cpu: result.totalCpu, rssMb: result.totalRssMb });
+      setTotals({
+        cpu: result.totalCpu,
+        cores: result.cpuCores,
+        rssMb: result.totalRssMb,
+      });
       setSampledAt(result.sampledAt);
     } else {
       const result = await rpc.call("listProcesses");
@@ -260,7 +266,13 @@ function Monitor() {
         {totals ? (
           <div className="flex items-baseline gap-3">
             <span className="font-mono text-lg font-semibold">
-              {totals.cpu.toFixed(1)}%
+              {(totals.cpu / totals.cores).toFixed(1)}%
+            </span>
+            <span
+              className="text-xs text-muted-foreground"
+              title="Machine utilization: Σ per-core %CPU ÷ cores (ps reports 100% per saturated core)"
+            >
+              of {totals.cores} cores ({totals.cpu.toFixed(0)}% Σ)
             </span>
             <span className="text-muted-foreground">·</span>
             <span className="font-mono text-lg font-semibold">
