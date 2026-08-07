@@ -16,12 +16,21 @@ const execFileAsync = promisify(execFile);
 const processSchema = z.object({
   pid: z.number(),
   ppid: z.number(),
+  pgid: z.number(),
   cpu: z.number(),
   rssMb: z.number(),
   elapsed: z.string(),
   command: z.string(),
 });
 export type ProcessRow = z.infer<typeof processSchema>;
+
+const serverSchema = z.object({
+  pid: z.number(),
+  pgid: z.number(),
+  ports: z.array(z.number()),
+  command: z.string(),
+});
+export type ServerRow = z.infer<typeof serverSchema>;
 
 const groupSchema = z.object({
   key: z.string(),
@@ -33,6 +42,7 @@ const groupSchema = z.object({
   rssMb: z.number(),
   processCount: z.number(),
   processes: z.array(processSchema),
+  servers: z.array(serverSchema),
   rssHistory: z.array(z.number()),
   cpuHistory: z.array(z.number()),
 });
@@ -62,6 +72,9 @@ export const rpcContract = defineRpcContract({
       .object({
         pid: z.number().int().gt(1),
         signal: z.enum(["TERM", "KILL"]),
+        // Kill the whole process group (pid is a pgid) — for dev-server
+        // sessions where the supervisor would respawn a killed child.
+        group: z.boolean().optional(),
       })
       .strict(),
     output: z.object({ ok: z.boolean(), message: z.string() }),
@@ -83,16 +96,17 @@ interface Target {
 
 function parsePsLine(line: string): ProcessRow | null {
   const match = line.match(
-    /^\s*(\d+)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+(\S+)\s+(.*)$/,
+    /^\s*(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+(\S+)\s+(.*)$/,
   );
   if (!match) return null;
   return {
     pid: Number(match[1]),
     ppid: Number(match[2]),
-    cpu: Number(match[3]),
-    rssMb: Math.round(Number(match[4]) / 1024),
-    elapsed: match[5]!,
-    command: match[6]!.slice(0, 400),
+    pgid: Number(match[3]),
+    cpu: Number(match[4]),
+    rssMb: Math.round(Number(match[5]) / 1024),
+    elapsed: match[6]!,
+    command: match[7]!.slice(0, 400),
   };
 }
 
@@ -107,7 +121,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function ps(): Promise<ProcessRow[]> {
     const { stdout } = await execFileAsync(
       "ps",
-      ["axo", "pid,ppid,pcpu,rss,etime,command"],
+      ["axo", "pid,ppid,pgid,pcpu,rss,etime,command"],
       { maxBuffer: 32 * 1024 * 1024 },
     );
     return stdout
@@ -252,8 +266,39 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
+  // One lsof sweep: pid → listening TCP ports.
+  async function listeningPorts(): Promise<Map<number, Set<number>>> {
+    const byPid = new Map<number, Set<number>>();
+    try {
+      const { stdout } = await execFileAsync(
+        "lsof",
+        ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpn"],
+        { timeout: 10_000, maxBuffer: 8 * 1024 * 1024 },
+      );
+      let currentPid: number | null = null;
+      for (const line of stdout.split("\n")) {
+        if (line.startsWith("p")) currentPid = Number(line.slice(1));
+        else if (line.startsWith("n") && currentPid !== null) {
+          const port = Number(line.slice(1).split(":").pop());
+          if (!Number.isNaN(port)) {
+            const ports = byPid.get(currentPid) ?? new Set<number>();
+            ports.add(port);
+            byPid.set(currentPid, ports);
+          }
+        }
+      }
+    } catch {
+      // lsof unavailable or permission-limited; server chips just stay empty.
+    }
+    return byPid;
+  }
+
   async function sample() {
-    const [targets, processes] = await Promise.all([loadTargets(), ps()]);
+    const [targets, processes, listeners] = await Promise.all([
+      loadTargets(),
+      ps(),
+      listeningPorts(),
+    ]);
     const rows = new Map<number, PsRow>();
     for (const proc of processes) {
       rows.set(proc.pid, { ...proc, children: [], groupKey: null });
@@ -305,6 +350,15 @@ export default async function plugin(bb: BbPluginApi) {
       if (bucket.rss.length > HISTORY_LIMIT) bucket.rss.shift();
       if (bucket.cpu.length > HISTORY_LIMIT) bucket.cpu.shift();
       history.set(groupKey, bucket);
+      const servers: ServerRow[] = members
+        .filter((row) => listeners.has(row.pid))
+        .map((row) => ({
+          pid: row.pid,
+          pgid: row.pgid,
+          ports: [...listeners.get(row.pid)!].sort((a, b) => a - b),
+          command: row.command.slice(0, 120),
+        }))
+        .sort((a, b) => (a.ports[0] ?? 0) - (b.ports[0] ?? 0));
       groups.push({
         key: groupKey,
         label: target?.label ?? "Everything else",
@@ -318,6 +372,7 @@ export default async function plugin(bb: BbPluginApi) {
           .sort((a, b) => b.rssMb - a.rssMb)
           .slice(0, 15)
           .map(({ children: _c, groupKey: _g, ...proc }) => proc),
+        servers,
         rssHistory: bucket.rss,
         cpuHistory: bucket.cpu,
       });
@@ -347,14 +402,31 @@ export default async function plugin(bb: BbPluginApi) {
       const totalMemMb = processes.reduce((sum, row) => sum + row.rssMb, 0);
       return { processes, sampledAt: Date.now(), totalMemMb };
     },
-    async kill({ pid, signal }) {
-      if (pid === process.pid) {
+    async kill({ pid, signal, group }) {
+      if (pid === process.pid || (group && pid === process.getgid?.())) {
         return { ok: false, message: "That is the bb server itself." };
       }
       try {
-        process.kill(pid, `SIG${signal}`);
-        bb.log.info(`sent SIG${signal} to pid ${pid}`);
-        return { ok: true, message: `Sent SIG${signal} to ${pid}.` };
+        // Guard: never signal a group that contains the bb server.
+        if (group) {
+          const { stdout } = await execFileAsync("ps", [
+            "-o",
+            "pgid=",
+            "-p",
+            String(process.pid),
+          ]);
+          if (Number(stdout.trim()) === pid) {
+            return { ok: false, message: "That group contains the bb server." };
+          }
+        }
+        process.kill(group ? -pid : pid, `SIG${signal}`);
+        bb.log.info(
+          `sent SIG${signal} to ${group ? `process group ${pid}` : `pid ${pid}`}`,
+        );
+        return {
+          ok: true,
+          message: `Sent SIG${signal} to ${group ? `session (pgid ${pid})` : pid}.`,
+        };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return { ok: false, message };

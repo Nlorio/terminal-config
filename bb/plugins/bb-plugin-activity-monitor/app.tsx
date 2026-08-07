@@ -127,6 +127,66 @@ function ProcessLine({
   );
 }
 
+function ServerChip({
+  server,
+  onKillSession,
+}: {
+  server: GroupRow["servers"][number];
+  onKillSession: (pgid: number, signal: "TERM" | "KILL") => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-success/10 px-2 py-0.5 text-xs">
+      <span className="h-1.5 w-1.5 rounded-full bg-success" />
+      <span className="font-medium">{shortCommand(server.command)}</span>
+      <span className="font-mono text-muted-foreground">
+        {server.ports
+          .slice(0, 4)
+          .map((port) => `:${port}`)
+          .join(" ")}
+        {server.ports.length > 4 ? ` +${server.ports.length - 4}` : ""}
+      </span>
+      {confirming ? (
+        <>
+          <button
+            type="button"
+            className="font-medium text-destructive-text hover:underline"
+            onClick={(event) => {
+              event.stopPropagation();
+              onKillSession(server.pgid, "TERM");
+              setConfirming(false);
+            }}
+          >
+            kill session?
+          </button>
+          <button
+            type="button"
+            className="text-muted-foreground hover:underline"
+            onClick={(event) => {
+              event.stopPropagation();
+              setConfirming(false);
+            }}
+          >
+            ✕
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          className="text-muted-foreground hover:text-destructive-text"
+          title={`Kill session (pgid ${server.pgid}, pid ${server.pid})`}
+          onClick={(event) => {
+            event.stopPropagation();
+            setConfirming(true);
+          }}
+        >
+          ⏻
+        </button>
+      )}
+    </span>
+  );
+}
+
 function GroupCard({
   group,
   sortKey,
@@ -136,7 +196,7 @@ function GroupCard({
   group: GroupRow;
   sortKey: "rssMb" | "cpu";
   filter: string;
-  onKill: (pid: number, signal: "TERM" | "KILL") => void;
+  onKill: (pid: number, signal: "TERM" | "KILL", group?: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(group.kind === "worktree");
   const needle = filter.trim().toLowerCase();
@@ -181,6 +241,17 @@ function GroupCard({
           {formatMb(group.rssMb)}
         </span>
       </button>
+      {group.servers.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 border-t border-border-hairline px-3 py-1.5">
+          {group.servers.map((server) => (
+            <ServerChip
+              key={server.pid}
+              server={server}
+              onKillSession={(pgid, signal) => onKill(pgid, signal, true)}
+            />
+          ))}
+        </div>
+      ) : null}
       {open ? (
         <div className="border-t border-border-hairline px-1 py-1">
           {processes.map((proc) => (
@@ -242,8 +313,8 @@ function Monitor() {
     return () => clearInterval(timer);
   }, [refresh, view]);
 
-  async function kill(pid: number, signal: "TERM" | "KILL") {
-    const result = await rpc.call("kill", { pid, signal });
+  async function kill(pid: number, signal: "TERM" | "KILL", group = false) {
+    const result = await rpc.call("kill", { pid, signal, group });
     if (result.ok) toast.success(result.message);
     else toast.error(result.message);
     void refresh();
