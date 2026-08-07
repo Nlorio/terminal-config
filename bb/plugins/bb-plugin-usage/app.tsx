@@ -61,12 +61,14 @@ function ProviderCard({
   id,
   data,
   history,
+  labelOverride,
 }: {
   id: string;
   data: ProviderData;
   history: Usage["history"];
+  labelOverride?: string;
 }) {
-  const label = PROVIDER_LABELS[id] ?? id;
+  const label = labelOverride ?? PROVIDER_LABELS[id] ?? id;
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-3">
       <div className="flex items-baseline gap-2">
@@ -177,6 +179,26 @@ function UsagePanel() {
           </Button>
         </div>
         {usage
+          ? usage.custom.map((source) => (
+              <ProviderCard
+                key={`custom:${source.name}`}
+                id={`custom:${source.name}`}
+                data={
+                  source.status === "ok"
+                    ? {
+                        status: "ok",
+                        accountEmail: null,
+                        planLabel: source.planLabel,
+                        windows: source.windows,
+                      }
+                    : { status: "error", message: source.error ?? "failed" }
+                }
+                history={usage.history}
+                labelOverride={source.name}
+              />
+            ))
+          : null}
+        {usage
           ? (["claudeCode", "codex", "cursor"] as const).map((id) =>
               usage[id].status === "not_installed" ? null : (
                 <ProviderCard
@@ -188,6 +210,12 @@ function UsagePanel() {
               ),
             )
           : null}
+        {usage && usage.custom.length === 0 ? (
+          <div className="text-xs text-subtle-foreground">
+            Add org-imposed limit sources (e.g. Notion's) via `bb plugin config
+            usage set customSources "Name :: command-that-prints-json"`.
+          </div>
+        ) : null}
       </div>
     </div>
   );
