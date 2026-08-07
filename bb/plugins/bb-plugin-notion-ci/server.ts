@@ -196,40 +196,74 @@ export default async function plugin(bb: BbPluginApi) {
       .map((r) => r.trim())
       .filter(Boolean);
     const errors: string[] = [];
-    const byKey = new Map<string, PrRow>();
+
+    // Every query is independent, so run them concurrently: wall clock is the
+    // slowest single gh call instead of the sum of all of them.
+    interface Query {
+      repo: string;
+      role: PrRow["role"];
+      state: "open" | "merged";
+    }
+    const queries: Query[] = [];
     for (const repo of repoList) {
-      const roles: PrRow["role"][] = includeReviewRequested
-        ? ["author", "review-requested"]
-        : ["author"];
-      for (const role of roles) {
-        try {
-          for (const pr of await fetchPrs(repo, role)) {
-            const key = `${pr.repo}#${pr.number}`;
-            // Author role wins when a PR appears in both queries.
-            if (!byKey.has(key) || role === "author") byKey.set(key, pr);
-          }
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          errors.push(`${repo} (${role}): ${message}`);
-          bb.log.warn(`sync failed for ${repo} (${role}): ${message}`);
-        }
+      queries.push({ repo, role: "author", state: "open" });
+      if (includeReviewRequested) {
+        queries.push({ repo, role: "review-requested", state: "open" });
       }
       // Recently merged authored PRs, so shipped work stays visible.
-      try {
-        for (const pr of await fetchPrs(repo, "author", "merged")) {
-          byKey.set(`${pr.repo}#${pr.number}`, pr);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        errors.push(`${repo} (merged): ${message}`);
-        bb.log.warn(`sync failed for ${repo} (merged): ${message}`);
-      }
+      queries.push({ repo, role: "author", state: "merged" });
     }
-    try {
-      const login = (await runGh(["api", "user", "--jq", ".login"])).trim();
-      if (login) await bb.storage.kv.set("viewerLogin", login);
-    } catch {
-      // Keep any previously stored login.
+
+    const viewerPromise = (async () => {
+      // The login never changes; only ask GitHub when we have not cached it.
+      const cached = await bb.storage.kv.get<string>("viewerLogin");
+      if (cached) return cached;
+      try {
+        const login = (await runGh(["api", "user", "--jq", ".login"])).trim();
+        if (login) await bb.storage.kv.set("viewerLogin", login);
+        return login;
+      } catch {
+        return null;
+      }
+    })();
+
+    const settled = await Promise.all(
+      queries.map(async (query) => {
+        try {
+          return {
+            query,
+            prs: await fetchPrs(query.repo, query.role, query.state),
+            error: null as string | null,
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          bb.log.warn(
+            `sync failed for ${query.repo} (${query.role}/${query.state}): ${message}`,
+          );
+          return { query, prs: [] as PrRow[], error: message };
+        }
+      }),
+    );
+    await viewerPromise;
+
+    // Merge with the same precedence the sequential version had: merged rows
+    // win, then author, then review-requested.
+    const byKey = new Map<string, PrRow>();
+    const precedence = (q: Query) =>
+      q.state === "merged" ? 2 : q.role === "author" ? 1 : 0;
+    const rank = new Map<string, number>();
+    for (const { query, prs, error } of settled) {
+      if (error) {
+        errors.push(`${query.repo} (${query.role}/${query.state}): ${error}`);
+      }
+      for (const pr of prs) {
+        const key = `${pr.repo}#${pr.number}`;
+        const score = precedence(query);
+        if (!byKey.has(key) || score >= (rank.get(key) ?? -1)) {
+          byKey.set(key, pr);
+          rank.set(key, score);
+        }
+      }
     }
     const prs = [...byKey.values()];
     await bb.storage.kv.set("prs", prs);

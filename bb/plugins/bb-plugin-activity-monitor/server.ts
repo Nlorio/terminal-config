@@ -116,6 +116,9 @@ const HISTORY_LIMIT = 60;
 export default async function plugin(bb: BbPluginApi) {
   // Per-load sparkline history; a plugin reload starts fresh.
   const history = new Map<string, { rss: number[]; cpu: number[] }>();
+  // pid → cwd (null = unresolvable). A process's cwd is effectively fixed,
+  // so this turns the per-sample lsof into a first-sighting-only cost.
+  const cwdCache = new Map<number, string | null>();
   let targetsCache: { targets: Target[]; fetchedAt: number } | null = null;
 
   async function ps(): Promise<ProcessRow[]> {
@@ -238,10 +241,30 @@ export default async function plugin(bb: BbPluginApi) {
   ): Promise<void> {
     // Bare shells (bb terminals, tmux panes) carry no path in argv; resolve
     // their cwd in one lsof call and attribute by directory prefix.
-    const shellPids = [...rows.values()]
-      .filter((row) => row.groupKey === null && SHELL_RE.test(row.command))
-      .map((row) => row.pid)
-      .slice(0, 100);
+    const candidates = [...rows.values()].filter(
+      (row) => row.groupKey === null && SHELL_RE.test(row.command),
+    );
+    // A process's cwd is effectively fixed, so only lsof pids we have not
+    // resolved before; cached hits are applied without spawning anything.
+    const shellPids: number[] = [];
+    for (const row of candidates) {
+      const cached = cwdCache.get(row.pid);
+      if (cached === undefined) {
+        if (shellPids.length < 100) shellPids.push(row.pid);
+        continue;
+      }
+      if (cached === null) continue;
+      const target = targets.find(
+        (t) => cached === t.path || cached.startsWith(`${t.path}/`),
+      );
+      if (target) row.groupKey = target.key;
+    }
+    // Drop cache entries for pids that no longer exist.
+    if (cwdCache.size > 400) {
+      for (const pid of cwdCache.keys()) {
+        if (!rows.has(pid)) cwdCache.delete(pid);
+      }
+    }
     if (!shellPids.length) return;
     try {
       const { stdout } = await execFileAsync(
@@ -249,17 +272,24 @@ export default async function plugin(bb: BbPluginApi) {
         ["-a", "-d", "cwd", "-F", "pn", "-p", shellPids.join(",")],
         { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 },
       );
+      const resolved = new Set<number>();
       let currentPid: number | null = null;
       for (const line of stdout.split("\n")) {
         if (line.startsWith("p")) currentPid = Number(line.slice(1));
         else if (line.startsWith("n") && currentPid !== null) {
           const cwd = line.slice(1);
+          cwdCache.set(currentPid, cwd);
+          resolved.add(currentPid);
           const target = targets.find(
             (t) => cwd === t.path || cwd.startsWith(`${t.path}/`),
           );
           const row = rows.get(currentPid);
           if (target && row) row.groupKey = target.key;
         }
+      }
+      // Remember misses too, so unresolvable pids are not re-probed forever.
+      for (const pid of shellPids) {
+        if (!resolved.has(pid)) cwdCache.set(pid, null);
       }
     } catch {
       // lsof can fail on permission-restricted pids; attribution just stays partial.

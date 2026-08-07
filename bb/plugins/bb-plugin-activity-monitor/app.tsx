@@ -307,10 +307,19 @@ function Monitor() {
 
   useEffect(() => {
     void refresh();
+    // Skip sampling while the app is hidden (other window/space/minimized):
+    // each sample spawns ps + lsof, which is pure waste nobody is looking at.
     const timer = setInterval(() => {
-      if (!pausedRef.current) void refresh();
+      if (!pausedRef.current && !document.hidden) void refresh();
     }, 5000);
-    return () => clearInterval(timer);
+    const onVisible = () => {
+      if (!document.hidden && !pausedRef.current) void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [refresh, view]);
 
   async function kill(pid: number, signal: "TERM" | "KILL", group = false) {

@@ -160,7 +160,14 @@ export default async function plugin(bb: BbPluginApi) {
     );
   }
 
-  async function fetchUsage() {
+  // Provider CLIs are slow (seconds) and their windows move on the order of
+  // minutes, so serve a short-lived cache: opening the panel is instant and
+  // repeat opens do not re-shell out.
+  let cache: { at: number; value: Awaited<ReturnType<typeof collect>> } | null =
+    null;
+  const CACHE_TTL_MS = 60_000;
+
+  async function collect() {
     const [usage, custom] = await Promise.all([
       bb.sdk.system.usageLimits(),
       runCustomSources(),
@@ -174,6 +181,15 @@ export default async function plugin(bb: BbPluginApi) {
     return { ...usage, custom, sampledAt: Date.now(), history };
   }
 
+  async function fetchUsage(force = false) {
+    if (!force && cache && Date.now() - cache.at < CACHE_TTL_MS) {
+      return cache.value;
+    }
+    const value = await collect();
+    cache = { at: Date.now(), value };
+    return value;
+  }
+
   bb.rpc.register(rpcContract, {
     async getUsage() {
       return fetchUsage();
@@ -182,11 +198,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   // Sample every 30 minutes so history exists even when the panel is closed.
   bb.background.schedule("sample", "*/30 * * * *", async () => {
-    const [usage, custom] = await Promise.all([
-      bb.sdk.system.usageLimits(),
-      runCustomSources(),
-    ]);
-    recordSamples(usage, custom);
+    await fetchUsage(true);
   });
 
   bb.cli.register({
