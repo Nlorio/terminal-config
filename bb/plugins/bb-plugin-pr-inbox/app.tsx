@@ -22,9 +22,9 @@ const REVIEW_TEAMS: { slug: string; label: string }[] = [
 ];
 
 const SECTIONS: { key: InboxPr["bucket"]; label: string; openByDefault: boolean }[] = [
-  { key: "returned-to-you", label: "Returned to you", openByDefault: false },
-  { key: "approved-or-merging", label: "Approved or merging", openByDefault: false },
-  { key: "waiting-for-reviewers", label: "Waiting for reviewers", openByDefault: false },
+  { key: "returned-to-you", label: "Returned to you", openByDefault: true },
+  { key: "approved-or-merging", label: "Approved or merging", openByDefault: true },
+  { key: "waiting-for-reviewers", label: "Waiting for reviewers", openByDefault: true },
   { key: "reviewed-by-you", label: "Reviewed by you", openByDefault: false },
   { key: "drafts", label: "Drafts", openByDefault: false },
   { key: "recently-merged", label: "Recently merged", openByDefault: false },
