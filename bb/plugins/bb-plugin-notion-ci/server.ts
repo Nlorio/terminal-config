@@ -142,8 +142,12 @@ function summarizeChecks(checks: RawCheck[] | null): {
   };
 }
 
-const GH_FIELDS =
-  "number,title,url,headRefName,isDraft,updatedAt,statusCheckRollup,author,state,reviewDecision,latestReviews";
+const GH_BASE_FIELDS =
+  "number,title,url,headRefName,isDraft,updatedAt,author,state,reviewDecision,latestReviews";
+// Check rollups are the expensive part of the GraphQL query (GitHub 504s on
+// large merged sets) and CI state on a merged PR is meaningless, so ask for
+// them only on open PRs.
+const GH_FIELDS = `${GH_BASE_FIELDS},statusCheckRollup`;
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
@@ -193,9 +197,9 @@ export default async function plugin(bb: BbPluginApi) {
       "--state",
       state,
       "--json",
-      GH_FIELDS,
+      state === "merged" ? GH_BASE_FIELDS : GH_FIELDS,
       "--limit",
-      state === "merged" ? "15" : "50",
+      state === "merged" ? (role === "reviewed" ? "30" : "15") : "50",
     ]);
     const raw = JSON.parse(stdout) as RawPr[];
     const now = Date.now();
@@ -246,6 +250,10 @@ export default async function plugin(bb: BbPluginApi) {
       queries.push({ repo, role: "reviewed", state: "open" });
       // Recently merged authored PRs, so shipped work stays visible.
       queries.push({ repo, role: "author", state: "merged" });
+      // …and merged PRs this viewer reviewed: once merged they are neither
+      // authored by them nor still in any review queue, so without this they
+      // vanish from every other query.
+      queries.push({ repo, role: "reviewed", state: "merged" });
     }
 
     // Needed before mapping rows (to spot this viewer's own review), but the
