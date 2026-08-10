@@ -14,8 +14,12 @@ const execFileAsync = promisify(execFile);
 const prSchema = z.object({
   repo: z.string(),
   number: z.number(),
-  role: z.enum(["author", "review-requested"]),
+  role: z.enum(["author", "review-requested", "reviewed"]),
   author: z.string(),
+  // This viewer's latest review on the PR, when they have reviewed it.
+  myReview: z
+    .enum(["approved", "changes_requested", "commented", "dismissed"])
+    .nullable(),
   title: z.string(),
   url: z.string(),
   branch: z.string(),
@@ -58,6 +62,28 @@ interface RawCheck {
   state?: string;
 }
 
+function myReviewState(
+  pr: RawPr,
+  viewerLogin: string | null,
+): PrRow["myReview"] {
+  if (!viewerLogin) return null;
+  const mine = (pr.latestReviews ?? []).find(
+    (review) => review.author?.login === viewerLogin,
+  );
+  switch (mine?.state?.toUpperCase()) {
+    case "APPROVED":
+      return "approved";
+    case "CHANGES_REQUESTED":
+      return "changes_requested";
+    case "COMMENTED":
+      return "commented";
+    case "DISMISSED":
+      return "dismissed";
+    default:
+      return null;
+  }
+}
+
 interface RawPr {
   number: number;
   title: string;
@@ -69,6 +95,7 @@ interface RawPr {
   author: { login?: string } | null;
   state: string;
   reviewDecision: string | null;
+  latestReviews?: { author?: { login?: string }; state?: string }[] | null;
 }
 
 function groupFor(pr: RawPr): { group: PrRow["group"]; changesRequested: boolean } {
@@ -116,7 +143,7 @@ function summarizeChecks(checks: RawCheck[] | null): {
 }
 
 const GH_FIELDS =
-  "number,title,url,headRefName,isDraft,updatedAt,statusCheckRollup,author,state,reviewDecision";
+  "number,title,url,headRefName,isDraft,updatedAt,statusCheckRollup,author,state,reviewDecision,latestReviews";
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
@@ -149,11 +176,14 @@ export default async function plugin(bb: BbPluginApi) {
     repo: string,
     role: PrRow["role"],
     state: "open" | "merged" = "open",
+    viewerLogin: string | null = null,
   ): Promise<PrRow[]> {
     const roleArgs =
       role === "author"
         ? ["--author", "@me"]
-        : ["--search", "review-requested:@me"];
+        : role === "reviewed"
+          ? ["--search", "reviewed-by:@me"]
+          : ["--search", "review-requested:@me"];
     const stdout = await runGh([
       "pr",
       "list",
@@ -173,6 +203,7 @@ export default async function plugin(bb: BbPluginApi) {
       repo,
       number: pr.number,
       role,
+      myReview: myReviewState(pr, viewerLogin),
       author: pr.author?.login ?? "unknown",
       title: pr.title,
       url: pr.url,
@@ -210,29 +241,37 @@ export default async function plugin(bb: BbPluginApi) {
       if (includeReviewRequested) {
         queries.push({ repo, role: "review-requested", state: "open" });
       }
+      // PRs this viewer has already reviewed (GitHub drops them from the
+      // review-requested queue once a review is submitted).
+      queries.push({ repo, role: "reviewed", state: "open" });
       // Recently merged authored PRs, so shipped work stays visible.
       queries.push({ repo, role: "author", state: "merged" });
     }
 
-    const viewerPromise = (async () => {
-      // The login never changes; only ask GitHub when we have not cached it.
-      const cached = await bb.storage.kv.get<string>("viewerLogin");
-      if (cached) return cached;
+    // Needed before mapping rows (to spot this viewer's own review), but the
+    // login never changes, so it is a cache hit after the first sync.
+    let viewerLogin = (await bb.storage.kv.get<string>("viewerLogin")) ?? null;
+    if (!viewerLogin) {
       try {
-        const login = (await runGh(["api", "user", "--jq", ".login"])).trim();
-        if (login) await bb.storage.kv.set("viewerLogin", login);
-        return login;
+        viewerLogin =
+          (await runGh(["api", "user", "--jq", ".login"])).trim() || null;
+        if (viewerLogin) await bb.storage.kv.set("viewerLogin", viewerLogin);
       } catch {
-        return null;
+        viewerLogin = null;
       }
-    })();
+    }
 
     const settled = await Promise.all(
       queries.map(async (query) => {
         try {
           return {
             query,
-            prs: await fetchPrs(query.repo, query.role, query.state),
+            prs: await fetchPrs(
+              query.repo,
+              query.role,
+              query.state,
+              viewerLogin,
+            ),
             error: null as string | null,
           };
         } catch (error) {
@@ -244,13 +283,18 @@ export default async function plugin(bb: BbPluginApi) {
         }
       }),
     );
-    await viewerPromise;
 
     // Merge with the same precedence the sequential version had: merged rows
     // win, then author, then review-requested.
     const byKey = new Map<string, PrRow>();
     const precedence = (q: Query) =>
-      q.state === "merged" ? 2 : q.role === "author" ? 1 : 0;
+      q.state === "merged"
+        ? 3
+        : q.role === "author"
+          ? 2
+          : q.role === "reviewed"
+            ? 1
+            : 0;
     const rank = new Map<string, number>();
     for (const { query, prs, error } of settled) {
       if (error) {
@@ -281,6 +325,7 @@ export default async function plugin(bb: BbPluginApi) {
       const prs = stored.map((pr) => ({
         ...pr,
         author: pr.author ?? "unknown",
+        myReview: pr.myReview ?? null,
         group: pr.group ?? (pr.isDraft ? ("draft" as const) : ("ready" as const)),
         changesRequested: pr.changesRequested ?? false,
       }));

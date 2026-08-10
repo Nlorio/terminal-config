@@ -55,6 +55,24 @@ function PrCard({ pr }: { pr: PrRow }) {
             changes requested
           </span>
         ) : null}
+        {pr.myReview ? (
+          <span
+            className={`rounded px-1.5 py-0.5 text-xs ${
+              pr.myReview === "approved"
+                ? "bg-success/15 text-success"
+                : pr.myReview === "changes_requested"
+                  ? "bg-destructive/15 text-destructive-text"
+                  : "bg-muted text-muted-foreground"
+            }`}
+            title="Your latest review on this PR"
+          >
+            {pr.myReview === "approved"
+              ? "✓ you approved"
+              : pr.myReview === "changes_requested"
+                ? "you requested changes"
+                : `you ${pr.myReview}`}
+          </span>
+        ) : null}
         <span className="ml-auto text-xs text-subtle-foreground">
           {pr.repo.split("/").pop()} · {pr.author} · #{pr.number}
         </span>
@@ -111,6 +129,9 @@ function Dashboard() {
   const [syncing, setSyncing] = useState(false);
   const [query, setQuery] = useState("");
   const [authorFilter, setAuthorFilter] = useState<string>("all");
+  const [reviewFilter, setReviewFilter] = useState<
+    "all" | "reviewed" | "approved" | "changes_requested"
+  >("all");
   const [statusFilter, setStatusFilter] = useState<PrRow["group"] | "all">("all");
   const [groupBy, setGroupBy] = useState<"status" | "repo" | "none">("none");
 
@@ -154,6 +175,14 @@ function Dashboard() {
     } else if (authorFilter !== "all" && pr.author !== authorFilter) {
       return false;
     }
+    if (reviewFilter === "reviewed" && pr.myReview === null) return false;
+    if (reviewFilter === "approved" && pr.myReview !== "approved") return false;
+    if (
+      reviewFilter === "changes_requested" &&
+      pr.myReview !== "changes_requested"
+    ) {
+      return false;
+    }
     if (!needle) return true;
     return (
       String(pr.number).includes(needle.replace(/^#/, "")) ||
@@ -164,6 +193,13 @@ function Dashboard() {
   });
 
   const authors = [...new Set(prs.map((pr) => pr.author))].sort();
+  // Counts over everything cached, so the options read as an inbox.
+  const reviewCounts = {
+    reviewed: prs.filter((pr) => pr.myReview !== null).length,
+    approved: prs.filter((pr) => pr.myReview === "approved").length,
+    changesRequested: prs.filter((pr) => pr.myReview === "changes_requested")
+      .length,
+  };
   const STATUSES: { key: PrRow["group"]; label: string }[] = [
     { key: "ready", label: "Ready for review" },
     { key: "approved", label: "Approved" },
@@ -228,6 +264,21 @@ function Dashboard() {
                 {author}
               </option>
             ))}
+          </select>
+          <select
+            value={reviewFilter}
+            onChange={(event) =>
+              setReviewFilter(event.target.value as typeof reviewFilter)
+            }
+            className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+            title="Filter by your own review on the PR"
+          >
+            <option value="all">Any review state</option>
+            <option value="reviewed">Reviewed by me ({reviewCounts.reviewed})</option>
+            <option value="approved">Approved by me ({reviewCounts.approved})</option>
+            <option value="changes_requested">
+              I requested changes ({reviewCounts.changesRequested})
+            </option>
           </select>
         </div>
         <div className="flex flex-wrap items-center gap-2">
