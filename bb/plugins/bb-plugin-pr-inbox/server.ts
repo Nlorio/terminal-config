@@ -104,7 +104,10 @@ const BASE_FIELDS =
 // endpoint 504s on a 60-PR page that includes it, while the same page without
 // it returns fine. Only request it on pages small enough to survive.
 const OPEN_FIELDS = `${BASE_FIELDS},comments,statusCheckRollup`;
-const ROLLUP_SAFE_LIMIT = 30;
+const OPEN_LIMIT = 50;
+// Largest page GitHub reliably serves *with* the rollup; measured 504s above
+// this, while the same page without the rollup returns in ~2s.
+const ROLLUP_PAGE = 30;
 
 function summarizeChecks(checks: RawPr["statusCheckRollup"]): {
   ciState: InboxPr["ciState"];
@@ -231,7 +234,7 @@ export default async function plugin(bb: BbPluginApi) {
     viewerLogin: string | null,
     mergedLimit: number,
   ): Promise<InboxPr[]> {
-    const stdout = await runGh([
+    const args = (fields: string, limitOverride?: number) => [
       "pr",
       "list",
       "-R",
@@ -240,12 +243,43 @@ export default async function plugin(bb: BbPluginApi) {
       "--state",
       query.state,
       "--json",
-      query.state === "merged" ? BASE_FIELDS : OPEN_FIELDS,
+      fields,
       "--limit",
       String(
-        query.state === "merged" ? mergedLimit : ROLLUP_SAFE_LIMIT,
+        limitOverride ??
+          (query.state === "merged" ? mergedLimit : OPEN_LIMIT),
       ),
-    ]);
+    ];
+    // Two concurrent requests beat one compromise: a cheap rollup-free page
+    // gives the complete list (a 50-PR page including the rollup 504s), and a
+    // small rollup page supplies CI state for the newest PRs. Rows beyond that
+    // window simply show no check state instead of vanishing.
+    let stdout: string;
+    let rollupByNumber = new Map<number, RawPr["statusCheckRollup"]>();
+    if (query.state === "merged") {
+      stdout = await runGh(args(BASE_FIELDS));
+    } else {
+      const [listOut, rollupOut] = await Promise.all([
+        runGh(args(BASE_FIELDS)),
+        runGh(args(OPEN_FIELDS, ROLLUP_PAGE)).catch((error: unknown) => {
+          bb.log.warn(
+            `rollup page failed for ${query.repo} ${query.search.join(" ")}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          return null;
+        }),
+      ]);
+      stdout = listOut;
+      if (rollupOut) {
+        rollupByNumber = new Map(
+          (JSON.parse(rollupOut) as RawPr[]).map((pr) => [
+            pr.number,
+            pr.statusCheckRollup,
+          ]),
+        );
+      }
+    }
     const raw = JSON.parse(stdout) as RawPr[];
     return raw.map((pr) => {
       const author = pr.author?.login ?? "unknown";
@@ -302,7 +336,9 @@ export default async function plugin(bb: BbPluginApi) {
         reviewers,
         myReview,
         reviewDecision: decision,
-        ...summarizeChecks(pr.statusCheckRollup),
+        ...summarizeChecks(
+          pr.statusCheckRollup ?? rollupByNumber.get(pr.number) ?? null,
+        ),
         stackPosition: null,
         stackTotal: null,
       };

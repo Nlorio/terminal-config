@@ -170,7 +170,9 @@ export default async function plugin(bb: BbPluginApi) {
     };
     const { stdout } = await execFileAsync("gh", args, {
       env,
-      timeout: 60_000,
+      // Bounded so one hung query cannot stall the whole (parallel) sync;
+      // healthy calls finish in 1-7s.
+      timeout: 45_000,
       maxBuffer: 16 * 1024 * 1024,
     });
     return stdout;
@@ -188,7 +190,9 @@ export default async function plugin(bb: BbPluginApi) {
         : role === "reviewed"
           ? ["--search", "reviewed-by:@me"]
           : ["--search", "review-requested:@me"];
-    const stdout = await runGh([
+    const limit =
+      state === "merged" ? (role === "reviewed" ? "30" : "15") : "50";
+    const args = (fields: string) => [
       "pr",
       "list",
       "-R",
@@ -197,10 +201,29 @@ export default async function plugin(bb: BbPluginApi) {
       "--state",
       state,
       "--json",
-      state === "merged" ? GH_BASE_FIELDS : GH_FIELDS,
+      fields,
       "--limit",
-      state === "merged" ? (role === "reviewed" ? "30" : "15") : "50",
-    ]);
+      limit,
+    ];
+    // statusCheckRollup is the expensive half of the GraphQL request: GitHub
+    // 504s once a page with it grows past ~50 PRs. Rather than shrink the page
+    // (which would silently hide PRs), degrade gracefully — retry without the
+    // rollup so rows still appear, just without CI state.
+    let stdout: string;
+    if (state === "merged") {
+      stdout = await runGh(args(GH_BASE_FIELDS));
+    } else {
+      try {
+        stdout = await runGh(args(GH_FIELDS));
+      } catch (error) {
+        bb.log.warn(
+          `rollup query failed for ${repo} (${role}); retrying without check state: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        stdout = await runGh(args(GH_BASE_FIELDS));
+      }
+    }
     const raw = JSON.parse(stdout) as RawPr[];
     const now = Date.now();
     return raw.map((pr) => ({

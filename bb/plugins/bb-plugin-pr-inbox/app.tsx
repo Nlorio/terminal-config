@@ -160,16 +160,24 @@ function Row({ pr }: { pr: InboxPr }) {
       <span className="w-10 shrink-0 text-right font-mono text-xs text-muted-foreground">
         {relativeAge(pr.updatedAt)}
       </span>
-      <span className="w-5 shrink-0 text-center">
+      <span className="flex w-28 shrink-0 justify-end gap-2 text-xs">
+        <a
+          href={pr.url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-primary hover:underline"
+        >
+          GitHub
+        </a>
         {pr.consoleUrl ? (
           <a
             href={pr.consoleUrl}
             target="_blank"
             rel="noreferrer"
-            className="text-subtle-foreground hover:text-primary"
-            title="Deploy console"
+            className="text-primary hover:underline"
+            title="Infra deploy console"
           >
-            ⚙
+            Deploy
           </a>
         ) : null}
       </span>
