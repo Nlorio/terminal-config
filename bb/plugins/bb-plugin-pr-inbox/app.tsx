@@ -22,9 +22,9 @@ const REVIEW_TEAMS: { slug: string; label: string }[] = [
 ];
 
 const SECTIONS: { key: InboxPr["bucket"]; label: string; openByDefault: boolean }[] = [
-  { key: "returned-to-you", label: "Returned to you", openByDefault: true },
-  { key: "approved-or-merging", label: "Approved or merging", openByDefault: true },
-  { key: "waiting-for-reviewers", label: "Waiting for reviewers", openByDefault: true },
+  { key: "returned-to-you", label: "Returned to you", openByDefault: false },
+  { key: "approved-or-merging", label: "Approved or merging", openByDefault: false },
+  { key: "waiting-for-reviewers", label: "Waiting for reviewers", openByDefault: false },
   { key: "reviewed-by-you", label: "Reviewed by you", openByDefault: false },
   { key: "drafts", label: "Drafts", openByDefault: false },
   { key: "recently-merged", label: "Recently merged", openByDefault: false },
@@ -305,7 +305,7 @@ function Inbox() {
     const teams = REVIEW_TEAMS.map((team) => ({
       key: `team:${team.slug}`,
       label: `Review for ${team.label}`,
-      openByDefault: true,
+      openByDefault: false,
       prs: take((pr) => pr.reviewTeams.includes(team.slug)),
     }));
     const rest = queue.filter((pr) => !claimed.has(pr));
@@ -313,7 +313,7 @@ function Inbox() {
       {
         key: "direct",
         label: "Requested from you directly",
-        openByDefault: true,
+        openByDefault: false,
         prs: direct,
       },
       ...teams,
