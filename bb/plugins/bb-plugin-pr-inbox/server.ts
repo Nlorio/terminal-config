@@ -49,6 +49,10 @@ const prSchema = z.object({
   reviewDecision: z.enum(["approved", "changes_requested", "review_required"]).nullable(),
   ciState: z.enum(["success", "failure", "pending", "none"]),
   failingChecks: z.array(z.string()),
+  // Review was requested from this viewer personally, not just via a team.
+  directReviewRequest: z.boolean(),
+  // Team slugs a review is requested from (e.g. "makenotion/monetization").
+  reviewTeams: z.array(z.string()),
   // Position within a stack of PRs chained by base branch (1-based).
   stackPosition: z.number().nullable(),
   stackTotal: z.number().nullable(),
@@ -88,7 +92,10 @@ interface RawPr {
   state: string;
   reviewDecision: string | null;
   latestReviews?: RawReview[] | null;
-  reviewRequests?: { login?: string; name?: string }[] | null;
+  // Mixed list: {__typename:"User", login} and {__typename:"Team", name, slug}.
+  reviewRequests?:
+    | { __typename?: string; login?: string; name?: string; slug?: string }[]
+    | null;
   additions?: number;
   deletions?: number;
   comments?: unknown[] | null;
@@ -290,6 +297,7 @@ export default async function plugin(bb: BbPluginApi) {
             )?.state,
           )
         : null;
+      const requests = pr.reviewRequests ?? [];
       const reviewers: InboxPr["reviewers"] = [
         ...(pr.latestReviews ?? []).flatMap((review) => {
           const login = review.author?.login;
@@ -298,10 +306,18 @@ export default async function plugin(bb: BbPluginApi) {
             ? [{ login, state }]
             : [];
         }),
-        ...(pr.reviewRequests ?? []).flatMap((request) =>
+        ...requests.flatMap((request) =>
           request.login ? [{ login: request.login, state: "pending" as const }] : [],
         ),
       ];
+      const reviewTeams = requests.flatMap((request) =>
+        request.__typename === "Team" && (request.slug ?? request.name)
+          ? [request.slug ?? request.name!]
+          : [],
+      );
+      const directReviewRequest =
+        viewerLogin !== null &&
+        requests.some((request) => request.login === viewerLogin);
       const decision = normalizeDecision(pr.reviewDecision);
       return {
         repo: query.repo,
@@ -339,6 +355,8 @@ export default async function plugin(bb: BbPluginApi) {
         ...summarizeChecks(
           pr.statusCheckRollup ?? rollupByNumber.get(pr.number) ?? null,
         ),
+        directReviewRequest,
+        reviewTeams,
         stackPosition: null,
         stackTotal: null,
       };

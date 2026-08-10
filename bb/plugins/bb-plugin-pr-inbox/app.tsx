@@ -10,8 +10,18 @@ import { toast } from "sonner";
 import type { rpcContract, InboxPr } from "./server";
 import { Button } from "@/components/ui/button";
 
+// "Needs your review" is split by *who* was asked: you personally first, then
+// each watched team, then anything else. Team slugs come from GitHub's
+// reviewRequests, so this needs no extra queries.
+const REVIEW_TEAMS: { slug: string; label: string }[] = [
+  { slug: "makenotion/monetization", label: "Monetization" },
+  {
+    slug: "makenotion/monetization-foundations",
+    label: "Monetization Foundations",
+  },
+];
+
 const SECTIONS: { key: InboxPr["bucket"]; label: string; openByDefault: boolean }[] = [
-  { key: "needs-your-review", label: "Needs your review", openByDefault: true },
   { key: "returned-to-you", label: "Returned to you", openByDefault: true },
   { key: "approved-or-merging", label: "Approved or merging", openByDefault: true },
   { key: "waiting-for-reviewers", label: "Waiting for reviewers", openByDefault: true },
@@ -289,6 +299,41 @@ function Inbox() {
       )
     : prs;
 
+  // Split the review queue by requester. First match wins, so a PR that asks
+  // for you personally never also shows up under one of your teams.
+  const reviewSections = useMemo(() => {
+    const queue = filtered.filter((pr) => pr.bucket === "needs-your-review");
+    const claimed = new Set<InboxPr>();
+    const take = (predicate: (pr: InboxPr) => boolean) => {
+      const picked = queue.filter((pr) => !claimed.has(pr) && predicate(pr));
+      picked.forEach((pr) => claimed.add(pr));
+      return picked;
+    };
+    const direct = take((pr) => pr.directReviewRequest);
+    const teams = REVIEW_TEAMS.map((team) => ({
+      key: `team:${team.slug}`,
+      label: `Review for ${team.label}`,
+      openByDefault: true,
+      prs: take((pr) => pr.reviewTeams.includes(team.slug)),
+    }));
+    const rest = queue.filter((pr) => !claimed.has(pr));
+    return [
+      {
+        key: "direct",
+        label: "Requested from you directly",
+        openByDefault: true,
+        prs: direct,
+      },
+      ...teams,
+      {
+        key: "other-teams",
+        label: "Review for other teams",
+        openByDefault: false,
+        prs: rest,
+      },
+    ];
+  }, [filtered]);
+
   return (
     <div className="h-full overflow-y-auto p-3 md:p-4">
       <div className="mx-auto w-full max-w-6xl space-y-2">
@@ -320,6 +365,14 @@ function Inbox() {
             {lastError}
           </div>
         ) : null}
+        {reviewSections.map((section) => (
+          <Section
+            key={section.key}
+            label={section.label}
+            openByDefault={section.openByDefault}
+            prs={section.prs}
+          />
+        ))}
         {SECTIONS.map((section) => (
           <Section
             key={section.key}
