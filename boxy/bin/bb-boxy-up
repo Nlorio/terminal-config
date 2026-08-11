@@ -30,12 +30,16 @@ else
 	log "Boxy $name already running."
 fi
 
-# 2. Make sure bb-app is installed in the box (the tunnel supervisor assumes it).
+# 2. Make sure bb-app is installed in the box at the laptop server's version.
+#    The daemon protocol requires a matching bb-app ("Daemon auto-update is
+#    disabled; install the server's bb-app package manually"), so upgrade
+#    whenever the installed version differs — presence alone is not enough.
 bb_version=$("$BB" --version 2>/dev/null || echo latest)
 log "Ensuring bb-app@$bb_version in box..."
 notion boxy ssh "$name" --command "zsh -lc '
 	export PATH=\"\$HOME/.npm-global/bin:\$PATH\"
-	command -v bb-host-daemon >/dev/null 2>&1 || npm i -g bb-app@$bb_version >/dev/null
+	installed=\$(npm ls -g bb-app --depth=0 2>/dev/null | sed -n \"s/.*bb-app@\\([0-9][^ ]*\\).*/\\1/p\")
+	[ \"\$installed\" = \"$bb_version\" ] || npm i -g bb-app@$bb_version >/dev/null
 '" >/dev/null
 
 # 3. Stage a one-shot join code if the box has no daemon identity yet
