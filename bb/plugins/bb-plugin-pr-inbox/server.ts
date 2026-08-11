@@ -481,4 +481,76 @@ export default async function plugin(bb: BbPluginApi) {
   bb.background.schedule("sync", "*/5 * * * *", async () => {
     await sync();
   });
+
+  bb.cli.register({
+    name: "pr-inbox",
+    summary: "PR inbox: your review queue and open PRs with CI state",
+    commands: [
+      {
+        name: "list",
+        summary: "List cached PRs, grouped by inbox section",
+        usage: "bb pr-inbox list [section]",
+      },
+      {
+        name: "sync",
+        summary: "Refresh the PR cache from GitHub now",
+        usage: "bb pr-inbox sync",
+      },
+    ],
+    async run(argv) {
+      const [command, filter] = argv;
+      if (command === "sync") {
+        const result = await sync();
+        return {
+          exitCode: result.errors.length ? 1 : 0,
+          stdout: `Synced ${result.synced} PR(s).`,
+          stderr: result.errors.join("\n"),
+        };
+      }
+      if (command === "list" || command === undefined) {
+        const prs = (await bb.storage.kv.get<InboxPr[]>("prs")) ?? [];
+        if (!prs.length) {
+          return { exitCode: 0, stdout: "Nothing cached. Run `bb pr-inbox sync`." };
+        }
+        const lines: string[] = [];
+        for (const bucket of BUCKETS) {
+          if (filter && bucket !== filter) continue;
+          const rows = prs.filter((pr) => pr.bucket === bucket);
+          if (!rows.length) continue;
+          lines.push(`${bucket} (${rows.length}):`);
+          for (const pr of rows) {
+            const ci =
+              pr.ciState === "failure"
+                ? `CI FAIL(${pr.failingChecks.slice(0, 2).join(", ")})`
+                : pr.ciState === "pending"
+                  ? "CI pending"
+                  : pr.ciState === "success"
+                    ? "CI ok"
+                    : "CI —";
+            const teams = pr.reviewTeams.length
+              ? ` [${pr.reviewTeams.map((team) => team.split("/").pop()).join(",")}]`
+              : "";
+            const stack = pr.stackTotal
+              ? ` stack ${pr.stackPosition}/${pr.stackTotal}`
+              : "";
+            lines.push(
+              `  ${pr.repo}#${pr.number} ${ci}${teams}${stack} +${pr.additions}/-${pr.deletions} ${pr.author} — ${pr.title}`,
+            );
+            lines.push(`    ${pr.url}${pr.consoleUrl ? `\n    ${pr.consoleUrl}` : ""}`);
+          }
+        }
+        return {
+          exitCode: 0,
+          stdout: lines.length
+            ? lines.join("\n")
+            : `No PRs in section "${filter}". Sections: ${BUCKETS.join(", ")}`,
+        };
+      }
+      return {
+        exitCode: 2,
+        stdout: "",
+        stderr: `Unknown command "${command}". Usage: bb pr-inbox [list|sync]`,
+      };
+    },
+  });
 }

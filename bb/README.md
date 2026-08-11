@@ -16,10 +16,12 @@ Everything customizing bb lives here. `./setup.sh` bootstraps a new machine
   - `bb-plugin-worktrees` — worktree ↔ thread dashboard: every git worktree
     (bb-managed and external, e.g. orca) with project, last-touched staleness,
     and adopt/cleanup actions; stale-while-revalidate scanning.
-  - `bb-plugin-notion-ci` — PR + CI dashboard for notion-next/notion-data
-    (gh-backed; search, Mine/author filters, status chips, deploy-console
-    links, `bb notion-ci prs|sync` CLI, 5-min sync cron). Replaces the
-    official github plugin, whose sync breaks on repos with issues disabled.
+  - `bb-plugin-pr-inbox` — Graphite-style PR inbox for notion-next/notion-data
+    (gh-backed; sectioned review queue split by direct vs team request,
+    reviewer avatars, stack position from base-branch chains, CI + diff size,
+    deploy-console links, `bb pr-inbox list|sync` CLI, 5-min sync cron).
+    Replaces both the official github plugin (its sync breaks on repos with
+    issues disabled) and the earlier `notion-ci` plugin, removed 2026-08-10.
   - `bb-plugin-activity-monitor` — resource manager: process tree grouped by
     project/worktree with rollups + sparklines, flat view, kill actions.
   - `bb-plugin-quickstart` — one-click thread presets: tmux, dev server, and
