@@ -11,6 +11,7 @@ Personal terminal configuration for macOS. All dotfiles are symlinked to this re
 - **tmux** - Terminal multiplexer with 256-color support
 - **vim** - Classic vim with pathogen plugins
 - **bb** - Agentic IDE configuration: custom theme, keyboard overrides, and path-installed plugins (see [bb/README.md](bb/README.md))
+- **boxy** - Self-contained Notion Boxy workstream helpers (`gwb`/`gwbr`), shareable as one directory (see [boxy/README.md](boxy/README.md))
 - **orca** - Keybindings + terminal theme for the Orca agent IDE
 - **skills** - Shared Claude Code / Codex skills, symlinked into both tool dirs
 
@@ -107,6 +108,9 @@ terminal-config/
 ├── .vimrc                    # Vim configuration (pathogen, gruvbox)
 ├── Makefile                  # Automated setup commands
 ├── README.md
+├── boxy/                     # Self-contained Boxy workstream module (gwb/gwbr)
+│   ├── boxy.zsh              # Source this one file to install
+│   └── README.md
 ├── bb/                       # bb (agentic IDE) config — see bb/README.md
 │   ├── setup.sh              # Bootstrap: theme + keyboard overrides + plugin installs
 │   ├── keyboard-overrides.json
@@ -114,7 +118,7 @@ terminal-config/
 │   └── plugins/              # Custom plugins, path-installed (live-editable)
 ├── env/
 │   ├── .tmux.conf            # Tmux configuration
-│   ├── .zsh_profile          # Worktree functions (gwa, gwr, gwb, gwrecover, gwbrecover)
+│   ├── .zsh_profile          # Worktree functions (gwa, gwr, gwrecover); sources boxy/
 │   ├── .zsh_functions        # Theme switch + process/memory triage & tsgo reapers
 │   │                         #   (mem-owners, proc-impact, tsgo-reap*, notion-runs)
 │   ├── .zshrc                # Zsh configuration
@@ -306,41 +310,18 @@ gwr feature-branch
 
 Walks every existing worktree and offers to either recreate its tmux session (mirroring the `gwa` layout — prompts for layout and AI assistant per worktree) or delete the worktree and branch. Useful after a reboot that wiped tmux state. Deletions run asynchronously so the prompt loop stays snappy.
 
-### `gwb` - Boxy Workstream Automation
+### `gwb` / `gwbr` - Boxy Workstreams (self-contained module)
 
-Parallel to `gwa` but for **Notion Boxy** (cloud dev environment). The local tmux session has a single window that SSHes into the boxy and attaches to a *nested remote tmux session* on the boxy itself — so the agent panes survive local tmux death, SSH drops, and laptop sleep:
+Boxy workstream helpers live in [`boxy/`](boxy/README.md) — a standalone,
+shareable module (take the one directory; nothing else in this repo is
+required). `.zsh_profile` sources it, and `gwa`'s boxy mode delegates to it.
 
-```bash
-gwb my-boxy
-```
-
-This will:
-1. Detect whether boxy `my-boxy` exists already. If not, prompt for **image flavor** ([n]otion-next / [m]ail / [d]ata) and run `notion boxy create my-boxy --branch my-boxy [--withMail|--withData] --detached`.
-2. Prompt for layout (`[d]efault` / `[l]ong-running`) and AI assistant (`[c]laude` / `code[x]`).
-3. Stage role files, an AI launcher script, and a tmux setup script on the boxy at `~/worktree-roles/`. For long-running layout, also create `~/worktree-todos/<name>/TODO.md` on the boxy, symlinked from `~/notion-next/WORKTREE-TODO.md` (added to `.git/info/exclude`).
-4. Create a single-window local tmux session named `boxy-<name>` (prefix `boxy-` so it sorts separately in `C-b s`). That window SSHes into the boxy, then runs `~/worktree-roles/_setup_tmux.sh` which idempotently builds a *remote* tmux session — also named `boxy-<name>` — on the boxy with the real layout:
-   - Window 0 `main`: shell in `~/notion-next`
-   - Window 1 `shell`: extra remote shell
-   - **Default**: Window 2 `ai` runs the chosen AI with no role priming
-   - **Long-running**: Window 2 `agents` (implementor + researcher split, role-labeled pane borders) and Window 3 `review` (adversarial), each launched via `~/worktree-roles/_launch.sh <role> <ai> <todo>`
-
-**Nested tmux ergonomics**: the inner (remote) tmux uses prefix `C-a` so it doesn't fight the outer's `C-b`. Type `C-a C-a` to send a literal `C-a` (e.g. shell start-of-line). The inner session also has an orange status bar so the nesting level is obvious at a glance.
-
-**Persistence**: closing your laptop drops the SSH but the remote tmux + agents keep running. Re-running `gwb <name>` rebuilds the local SSH wrapper and re-attaches to the same remote tmux. You can also reconnect from any machine via `notion boxy ssh <name>` then `tmux attach -t boxy-<name>`.
-
-Role files are shipped to the boxy by `scp` at session creation, so local edits in `env/worktree-roles/` propagate on the next `gwb`. The TODO file lives on the boxy filesystem (not locally), so notes are tied to the lifetime of the boxy itself.
-
-### `gwbr` - Boxy Workstream Remove
-
-Counterpart to `gwb`. Kills the local tmux session, then prompts before running `notion boxy destroy <name>` (irreversible):
-
-```bash
-gwbr my-boxy
-```
-
-### `gwbrecover` - Interactive Boxy Recovery
-
-Walks `notion boxy ls` and, for each remote boxy without a corresponding local `boxy-<name>` tmux session, offers to recreate the session (re-staging role files and TODO) or destroy the boxy. Destroys run asynchronously to keep the prompt loop snappy.
+- **`gwb <name>`** — create (or reattach to) a local tmux session that runs
+  `notion boxy create <name>`, which provisions the remote env and attaches to
+  its tmux nested inside the local session. The remote side survives SSH drops
+  and laptop sleep; re-run `gwb <name>` to reconnect.
+- **`gwbr <name>`** — kill the local session, then confirm before
+  `notion boxy destroy <name>` (irreversible).
 
 ## Process & Memory Management
 

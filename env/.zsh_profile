@@ -3,6 +3,9 @@
 # `_GW_ROLES_DIR` to point elsewhere if you keep your roles outside the repo.
 _GW_ROLES_DIR="${_GW_ROLES_DIR:-$HOME/Documents/config/terminal-config/env/worktree-roles}"
 
+# Boxy workstream helpers (gwb / gwbr) — a self-contained, shareable module.
+source "$HOME/Documents/config/terminal-config/boxy/boxy.zsh"
+
 # Persistent worktree TODO file location for a given branch. Single source of
 # truth for the path convention used by `_gw_create_worktree_todo` and
 # `_gw_create_ai_windows`.
@@ -124,19 +127,9 @@ gwa() {
   read -r mode_choice </dev/tty
   mode_choice=${mode_choice:-l}
 
-  # Boxy mode: create a local tmux session named after the branch, navigate to
-  # it, then run `notion boxy create` from inside that session. The create
-  # command provisions the remote env and attaches us to its tmux (nested
-  # inside this local session); from there we orchestrate on the boxy directly.
+  # Boxy mode: delegate to the self-contained module (boxy/boxy.zsh).
   if [[ "$mode_choice" =~ ^[Bb]$ ]]; then
-    echo "Creating boxy session '$branch'..."
-    tmux new-session -d -s "$branch" -n "main" 2>/dev/null || true
-    tmux send-keys -t "$branch:0" "notion boxy create $branch" C-m
-    if [ -n "$TMUX" ]; then
-      tmux switch-client -t "$branch"
-    else
-      tmux attach-session -t "$branch"
-    fi
+    gwb "$branch"
     return $?
   fi
 
