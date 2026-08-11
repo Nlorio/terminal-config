@@ -24,6 +24,17 @@ source /path/to/boxy/boxy.zsh
 
 Requirements: `tmux` and an authenticated `notion` CLI.
 
+### Without cloning the repo
+
+`boxy.zsh` is the only file you need — grab it directly:
+
+```zsh
+curl -fsSL https://raw.githubusercontent.com/Nlorio/terminal-config/main/boxy/boxy.zsh -o ~/.config/boxy.zsh
+echo 'source ~/.config/boxy.zsh' >> ~/.zshrc
+```
+
+Re-run the `curl` to pick up updates.
+
 ## Conventions
 
 Sessions are named after the boxy/branch name, so they group predictably in
