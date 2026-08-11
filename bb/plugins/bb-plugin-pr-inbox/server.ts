@@ -12,6 +12,7 @@ import { z } from "zod";
 const execFileAsync = promisify(execFile);
 
 export const BUCKETS = [
+  "in-merge-queue",
   "needs-your-review",
   "returned-to-you",
   "approved-or-merging",
@@ -115,6 +116,10 @@ const OPEN_LIMIT = 50;
 // Largest page GitHub reliably serves *with* the rollup; measured 504s above
 // this, while the same page without the rollup returns in ~2s.
 const ROLLUP_PAGE = 30;
+// Aviator (notion-next's merge queue) is driven by labels, not by GitHub's
+// native merge queue — repository.mergeQueue is null and isInMergeQueue is
+// always false here. `merge` enqueues a PR; the force variant jumps the line.
+const MERGE_QUEUE_LABELS = new Set(["merge", "DANGEROUSLY_FORCE_MERGE"]);
 
 function summarizeChecks(checks: RawPr["statusCheckRollup"]): {
   ciState: InboxPr["ciState"];
@@ -179,9 +184,13 @@ function bucketFor(args: {
   myReview: InboxPr["myReview"];
   decision: InboxPr["reviewDecision"];
   reviewRequestedOfViewer: boolean;
+  inMergeQueue: boolean;
 }): InboxPr["bucket"] {
   const { authoredByViewer, isDraft, merged, myReview, decision } = args;
   if (merged) return "recently-merged";
+  // notion-next merges through Aviator: the `merge` label is what enqueues a
+  // PR, so a labelled open PR is sitting in the queue right now.
+  if (args.inMergeQueue) return "in-merge-queue";
   if (authoredByViewer) {
     if (isDraft) return "drafts";
     if (decision === "changes_requested") return "returned-to-you";
@@ -348,6 +357,9 @@ export default async function plugin(bb: BbPluginApi) {
           decision,
           reviewRequestedOfViewer: (pr.reviewRequests ?? []).some(
             (request) => request.login === viewerLogin,
+          ),
+          inMergeQueue: (pr.labels ?? []).some(
+            (label) => label.name && MERGE_QUEUE_LABELS.has(label.name),
           ),
         }),
         additions: pr.additions ?? 0,
