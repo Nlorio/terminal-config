@@ -99,6 +99,13 @@ link:
 	@ln -sfn $(REPO_DIR)/neofetch/config.conf $(HOME)/.config/neofetch/config.conf
 	@echo "  ~/.config/neofetch/config.conf -> neofetch/config.conf"
 
+	@# Boxy → bb enrollment scripts (used by the bb-plugin-boxy "Enroll in bb" button)
+	@mkdir -p $(HOME)/.local/bin
+	@ln -sfn $(REPO_DIR)/boxy/bin/bb-boxy-up $(HOME)/.local/bin/bb-boxy-up
+	@ln -sfn $(REPO_DIR)/boxy/bin/bb-boxy-down $(HOME)/.local/bin/bb-boxy-down
+	@ln -sfn $(REPO_DIR)/boxy/bin/bb-boxy-tunnel $(HOME)/.local/bin/bb-boxy-tunnel
+	@echo "  ~/.local/bin/bb-boxy-{up,down,tunnel} -> boxy/bin/"
+
 	@echo ""
 	@echo "Symlinks created! Note: neofetch custom ASCII requires sudo:"
 	@echo "  sudo mkdir -p /etc/neofetch"
@@ -120,4 +127,7 @@ unlink:
 	@rm -rf $(HOME)/.config/ghostty/shaders
 	@rm -f $(HOME)/.config/neofetch/config.conf
 	@rm -f $(HOME)/.orca/keybindings.json
+	@rm -f $(HOME)/.local/bin/bb-boxy-up
+	@rm -f $(HOME)/.local/bin/bb-boxy-down
+	@rm -f $(HOME)/.local/bin/bb-boxy-tunnel
 	@echo "Symlinks removed."

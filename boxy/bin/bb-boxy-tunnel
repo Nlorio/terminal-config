@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# bb-boxy-tunnel <name> — supervise the reverse tunnel that lets the bb
+# host-daemon inside a Boxy reach the laptop's bb server.
+#
+# The boxy ssh-proxy leaks remote-forward listeners on disconnect (the stale
+# listener can't be freed from either side), so a fixed port can never rebind.
+# Instead each attempt uses -R 0 (sshd allocates a fresh port), parses the
+# allocated port from ssh stderr, and (re)starts the in-box daemon pointed at
+# it. Started by bb-boxy-up; marker "bb-boxy-tunnel=<name>" is used by pkill.
+set -uo pipefail
+
+name=${1:?usage: bb-boxy-tunnel <boxy-name>}
+BB_SERVER_PORT=38886
+STATE_DIR="$HOME/.local/state/bb-boxy"
+mkdir -p "$STATE_DIR"
+join_file="$STATE_DIR/join-$name" # "code hostid", written by bb-boxy-up
+
+log() { printf '%s [tunnel:%s] %s\n' "$(date +%H:%M:%S)" "$name" "$*"; }
+
+restart_daemon() {
+	local box_port=$1
+	local join_args=""
+	if [ -s "$join_file" ]; then
+		read -r code hostid <"$join_file"
+		join_args="join --join-code $code --host-id $hostid"
+	fi
+	notion boxy ssh "$name" --command "zsh -lc '
+		export PATH=\"\$HOME/.npm-global/bin:\$PATH\"
+		tmux kill-session -t bb-daemon 2>/dev/null || true
+		mkdir -p ~/.bb/logs
+		if [ -s \"\$HOME/.bb/auth.json\" ]; then
+			cmd=\"bb-host-daemon --server-url http://127.0.0.1:$box_port\"
+		else
+			cmd=\"bb-host-daemon $join_args --server-url http://127.0.0.1:$box_port\"
+		fi
+		tmux new-session -d -s bb-daemon \"while true; do \$cmd 2>&1 | tee -a ~/.bb/logs/daemon.log; sleep 5; done\"
+	'" >/dev/null 2>&1
+	local status=$?
+	if [ $status -eq 0 ] && [ -s "$join_file" ]; then
+		# One-shot: after the join start, later restarts use ~/.bb/auth.json.
+		# Only discard the code once enrollment actually wrote auth.json
+		# (`notion boxy ssh` swallows exit codes, so check via stdout marker).
+		sleep 5
+		if notion boxy ssh "$name" --command "zsh -lc 'test -s ~/.bb/auth.json && echo BB_HAS_AUTH'" 2>/dev/null | grep -q BB_HAS_AUTH; then
+			rm -f "$join_file"
+		else
+			log "join did not produce auth.json yet; keeping join code for retry"
+		fi
+	fi
+	return $status
+}
+
+while true; do
+	stderr_log=$(mktemp "${TMPDIR:-/tmp}/bb-boxy-tunnel.XXXXXX")
+	ssh -N -R "0:127.0.0.1:${BB_SERVER_PORT}" \
+		-o ExitOnForwardFailure=yes -o ControlMaster=no -o ControlPath=none \
+		-o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+		-o "SetEnv=bb-boxy-tunnel=${name}" \
+		"notion-boxy:${name}" 2>>"$stderr_log" &
+	ssh_pid=$!
+
+	box_port=""
+	for _ in $(seq 1 60); do
+		box_port=$(sed -n 's/.*Allocated port \([0-9]*\) for remote forward.*/\1/p' "$stderr_log" | head -1)
+		[ -n "$box_port" ] && break
+		kill -0 "$ssh_pid" 2>/dev/null || break
+		sleep 1
+	done
+
+	if [ -n "$box_port" ]; then
+		log "tunnel up on box port $box_port; (re)starting in-box daemon"
+		if restart_daemon "$box_port"; then
+			log "daemon restarted against port $box_port"
+		else
+			log "daemon restart failed (will retry on next tunnel cycle)"
+		fi
+		wait "$ssh_pid"
+		log "tunnel dropped (ssh exited $?)"
+	else
+		log "no allocated port; ssh output: $(tail -2 "$stderr_log" | tr '\n' ' ')"
+		kill "$ssh_pid" 2>/dev/null
+		wait "$ssh_pid" 2>/dev/null
+	fi
+	rm -f "$stderr_log"
+	sleep 5
+done

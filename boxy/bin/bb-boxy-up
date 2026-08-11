@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# bb-boxy-up <name> — create a Boxy (if needed) and enroll it as a bb machine,
+# so it appears in bb's environment picker with the /work/notion-next checkout
+# registered as a project source. Idempotent; safe to re-run.
+#
+# Companion: bb-boxy-down <name> tears down the tunnel + machine entry.
+set -euo pipefail
+
+name=${1:?usage: bb-boxy-up <boxy-name>}
+BB=${BB_CLI:-bb}
+BB_SERVER_PORT=38886 # laptop-side bb server (see ~/.bb/bb-app-runtime.json)
+BOX_CHECKOUT=/work/notion-next
+PROJECT_ID=${BB_BOXY_PROJECT:-proj_huqfmj6wj3} # notion-next
+LOG_DIR="$HOME/.local/state/bb-boxy"
+mkdir -p "$LOG_DIR"
+
+log() { printf '\033[1;34m[bb-boxy-up]\033[0m %s\n' "$*"; }
+
+# Note: `notion boxy ssh` does NOT propagate remote exit codes (always exits
+# 0), so remote checks must use stdout markers instead of exit status.
+boxy_ssh_check() { # boxy_ssh_check <name> <remote-command-that-echoes-MARKER>
+	notion boxy ssh "$1" --command "$2" 2>/dev/null | grep -q "$3"
+}
+
+# 1. Ensure the box exists (ssh probe doubles as dotfile sync / init).
+if ! boxy_ssh_check "$name" "echo BOXY_SSH_OK" BOXY_SSH_OK; then
+	log "Creating Boxy $name..."
+	notion boxy create "$name" --detached
+else
+	log "Boxy $name already running."
+fi
+
+# 2. Make sure bb-app is installed in the box (the tunnel supervisor assumes it).
+bb_version=$("$BB" --version 2>/dev/null || echo latest)
+log "Ensuring bb-app@$bb_version in box..."
+notion boxy ssh "$name" --command "zsh -lc '
+	export PATH=\"\$HOME/.npm-global/bin:\$PATH\"
+	command -v bb-host-daemon >/dev/null 2>&1 || npm i -g bb-app@$bb_version >/dev/null
+'" >/dev/null
+
+# 3. Stage a one-shot join code if the box has no daemon identity yet
+#    (~/.bb/auth.json persists in the box and survives same-name S3 restores).
+if ! boxy_ssh_check "$name" "zsh -lc 'test -s ~/.bb/auth.json && echo BB_HAS_AUTH'" BB_HAS_AUTH; then
+	json=$("$BB" machine join-code --json)
+	printf '%s %s\n' \
+		"$(printf '%s' "$json" | python3 -c "import json,sys;print(json.load(sys.stdin)['joinCode'])")" \
+		"$(printf '%s' "$json" | python3 -c "import json,sys;print(json.load(sys.stdin)['hostId'])")" \
+		>"$LOG_DIR/join-$name"
+	log "Staged join code for first enrollment."
+fi
+
+# 4. (Re)start the tunnel supervisor. It allocates a fresh remote port per
+#    attempt (-R 0; the boxy ssh-proxy leaks listeners on disconnect, so fixed
+#    ports can never rebind) and (re)starts the in-box daemon on each cycle.
+pkill -f "bb-boxy-tunnel=${name}" 2>/dev/null || true
+pkill -f "bb-boxy-tunnel $name" 2>/dev/null || true
+sleep 1
+log "Starting tunnel supervisor..."
+nohup "$HOME/.local/bin/bb-boxy-tunnel" "$name" >>"$LOG_DIR/tunnel-$name.log" 2>&1 &
+disown
+
+# 4. Wait for the machine to report connected.
+log "Waiting for machine to connect..."
+connected=false
+for _ in $(seq 1 30); do
+	if "$BB" machine show "$name" --json 2>/dev/null | grep -q '"status": *"connected"'; then
+		connected=true
+		break
+	fi
+	sleep 2
+done
+if [ "$connected" != true ]; then
+	echo "[bb-boxy-up] Machine did not connect within 60s." >&2
+	echo "  Tunnel log: $LOG_DIR/tunnel-$name.log" >&2
+	echo "  Daemon log: notion boxy ssh $name --command 'tail -20 ~/.bb/logs/daemon.log'" >&2
+	exit 1
+fi
+
+# 5. Register the box checkout as a project source (skip if a source already
+#    exists on this machine — sources are per-path, and every box uses the
+#    same /work/notion-next path but a distinct machine).
+machine_id=$("$BB" machine show "$name" --json | python3 -c "import json,sys;print(json.load(sys.stdin)['id'])")
+if ! "$BB" project show "$PROJECT_ID" --json 2>/dev/null |
+	python3 -c "
+import json,sys
+p=json.load(sys.stdin)
+srcs=p.get('sources',p.get('project',{}).get('sources',[]))
+ok=any(s.get('hostId')=='$machine_id' for s in srcs)
+sys.exit(0 if ok else 1)" 2>/dev/null; then
+	log "Registering $BOX_CHECKOUT as a project source on $name..."
+	"$BB" project source add "$PROJECT_ID" --machine "$machine_id" --path "$BOX_CHECKOUT"
+fi
+
+log "Done. '$name' is a connected bb machine ($machine_id)."
+log "Pick it in the composer's environment dropdown, or spawn directly:"
+log "  bb thread spawn --project $PROJECT_ID --machine $machine_id --environment $BOX_CHECKOUT --provider claude-code --prompt '...'"
+log "Port visibility: ssh -L 3000:127.0.0.1:3000 notion-boxy:$name   (or notion boxy port-forward $name --ports=3000)"

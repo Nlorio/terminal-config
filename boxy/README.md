@@ -52,3 +52,24 @@ the bb IDE, two independent companions exist:
 - **`bb-plugin-boxy-prefix`** (in this repo under `bb/plugins/`) — cosmetic:
   prefixes bb thread titles with `boxy - ` when the thread runs on a boxy
   host. Comes along if you adopt the full bb config via `bb/setup.sh`.
+
+### `bin/` — bb machine enrollment scripts
+
+`boxy/bin/` holds the laptop-side scripts the notion-boxy bb plugin's
+"Enroll in bb" button shells out to (symlinked into `~/.local/bin` by
+`make link`):
+
+- **`bb-boxy-up <name>`** — create the boxy if needed, install `bb-app` in
+  the box, stage a one-shot bb join code, start the reverse-tunnel
+  supervisor, and register `/work/notion-next` as a bb project source.
+  Idempotent.
+- **`bb-boxy-tunnel <name>`** — the supervisor `bb-boxy-up` launches: keeps
+  an ssh `-R 0` reverse tunnel to the laptop's bb server alive (fresh remote
+  port per attempt; the boxy ssh-proxy leaks listeners) and (re)starts the
+  in-box `bb-host-daemon` on each cycle.
+- **`bb-boxy-down <name> [--destroy]`** — tear down the tunnel and machine
+  entry (optionally destroy the boxy).
+
+Gotcha these scripts encode: `notion boxy ssh` does **not** propagate remote
+exit codes (always exits 0), so all remote condition checks echo a stdout
+marker and grep for it instead of branching on exit status.

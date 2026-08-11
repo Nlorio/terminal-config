@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# bb-boxy-down <name> [--destroy] — disconnect a Boxy from bb: stop the
+# reverse tunnel and remove the bb machine entry (and its project sources).
+# With --destroy, also destroys the Boxy itself.
+set -euo pipefail
+
+name=${1:?usage: bb-boxy-down <boxy-name> [--destroy]}
+destroy=${2:-}
+BB=${BB_CLI:-bb}
+
+log() { printf '\033[1;34m[bb-boxy-down]\033[0m %s\n' "$*"; }
+
+log "Stopping tunnel supervisor..."
+pkill -f "bb-boxy-tunnel $name" 2>/dev/null || true
+pkill -f "bb-boxy-tunnel=${name}" 2>/dev/null || true
+rm -f "$HOME/.local/state/bb-boxy/join-$name"
+
+if "$BB" machine show "$name" >/dev/null 2>&1; then
+	log "Removing bb machine entry..."
+	"$BB" machine remove "$name" --yes
+fi
+
+if [ "$destroy" = "--destroy" ]; then
+	log "Destroying Boxy $name..."
+	notion boxy destroy "$name" --yes
+fi
+
+log "Done."
