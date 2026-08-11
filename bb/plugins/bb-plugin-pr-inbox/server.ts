@@ -188,6 +188,13 @@ function bucketFor(args: {
     if (decision === "approved") return "approved-or-merging";
     return "waiting-for-reviewers";
   }
+  // Someone else's PR that you approved and that is now fully approved is
+  // waiting to land, not waiting on you — surface it next to your own
+  // ready-to-merge work rather than burying it under "reviewed by you".
+  if (myReview === "approved" && decision === "approved") {
+    return "approved-or-merging";
+  }
+  // Still approved by you but not by everyone required: it is in flight.
   if (myReview !== null) return "reviewed-by-you";
   return "needs-your-review";
 }
