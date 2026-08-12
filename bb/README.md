@@ -31,6 +31,61 @@ Everything customizing bb lives here. `./setup.sh` bootstraps a new machine
   - `bb-plugin-boxy-prefix` — prefixes thread titles with "boxy - " when the
     thread runs on a boxy host.
 
+## Connecting a Boxy as a bb execution machine
+
+bb's built-in Boxy "up / Reconnect" reaches the box over `notion boxy ssh`,
+which routes through **SSM**. When a pod runs but never registers in SSM
+(`pingStatus: unknown`), every Reconnect fails and the card shows
+`bb: offline` / `up failed`. The fix is to stop depending on SSH entirely:
+pair bb connect and have the box's daemon dial the public URL.
+
+One-time, on this Mac:
+
+```sh
+# claim a handle at https://getbb.app, then run the dashboard's command
+bb connect --code <code> --server https://<handle>.getbb.app
+```
+
+Per box (all of this works over `sshv2`, i.e. kubectl exec — no SSM):
+
+```sh
+BOX=<box-name>
+# 1. bb-app needs Node >= 22.19; boxes pin 22.13 for notion-next. Add a newer
+#    Node WITHOUT touching the repo pin:
+notion boxy sshv2 $BOX --command 'mise install node@24'
+
+# 2. The server's /install/bb-app.tgz 500s on a packaged bb, and the installer
+#    treats that as fatal instead of falling back to npm. Pre-install the
+#    MATCHING version (see `bb settings version`) so the installer reuses it.
+#    Run from $HOME: /work/notion-next pins packageManager=pnpm and breaks npm.
+notion boxy sshv2 $BOX --command 'cd $HOME && export PATH="$(mise where node@24)/bin:$PATH" && npm install -g --allow-scripts=@parcel/watcher,better-sqlite3,node-pty,@google/genai,protobufjs bb-app@<server-version>'
+
+# 3. Enroll. joinCode/hostId come from `bb machine join-code --json`;
+#    machineCode from the connect plugin (no CLI for it):
+#    curl -s -X POST -H 'content-type: application/json' -d 'null' \
+#      http://127.0.0.1:38886/api/v1/plugins/connect/rpc/createMachineCode
+notion boxy sshv2 $BOX --command "cd \$HOME && export PATH=\"\$(mise where node@24)/bin:\$(npm config get prefix)/bin:\$PATH\"; curl -fsSL https://<handle>.getbb.app/install.sh | sh -s -- --join-code '<join>' --host-id '<host>' --server https://<handle>.getbb.app --machine-code '<machine>'"
+```
+
+The installer's last step (systemd `--user`) fails in a pod: no D-Bus session.
+Start the daemon with a keepalive wrapper instead — see
+`~/bb-daemon-keepalive.sh` on an already-configured box; it re-execs
+`bb-app host-daemon --host-daemon-port 38888 --server-url https://<handle>.getbb.app`
+with `BB_DATA_DIR=~/.bb-machines/<handle>.getbb.app`, launched via
+`setsid nohup`.
+
+Caveats:
+
+- The keepalive survives daemon crashes, **not pod restarts**. After a pod
+  recycle, re-run the script over `sshv2`.
+- Threads bound to a machine record that gets removed show
+  `Host not found` and cannot be revived; their workspace files still exist
+  on the box under the old daemon's data dir
+  (`~/.bb/personal-workspaces/<env-id>/`) and can be recovered with `git diff`
+  over `sshv2`.
+- This does not fix `notion boxy ssh` itself. SSM stays broken until the pod
+  re-registers; destroy/recreate is the fix if other tooling needs it.
+
 ## Not in this repo (bb server state, `~/.bb/bb.db`)
 
 Theme *selection*, keyboard overrides (this repo holds the export), plugin
