@@ -1,0 +1,93 @@
+/*
+ * Tiki Love Dark — a 1972 Polynesian lounge for bb.
+ * Dark mode is faithful to the Ghostty theme
+ * (https://ghostty-style.vercel.app/config/tiki-love-dark);
+ * light mode is a derived "daylight tiki" on cream.
+ */
+
+:root, .light {
+  /* Anchors — cream canvas, dark kona-brown ink */
+  --canvas: #f4e8d0;
+  --ink: #33281c;
+
+  /* Accent — burnt tiki orange, readable on cream */
+  --primary: #b35c1e;
+  --primary-foreground: #f4e8d0;
+
+  /* Text tiers track the anchors */
+  --muted-foreground: color-mix(in oklch, var(--ink) 70%, var(--canvas));
+  --subtle-foreground: color-mix(in oklch, var(--ink) 58%, var(--canvas));
+  --readback-foreground: color-mix(in oklch, var(--ink) 64%, var(--canvas));
+
+  /* Semantics — darkened tiki hues for light-mode contrast */
+  --destructive: #c23a30;
+  --destructive-foreground: #f4e8d0;
+  --destructive-text: #a52f26;
+  --warning: #b8811f;
+  --warning-text: #8a6017;
+  --attention: #d4843e;
+  --success: #3f7a33;
+  --diff-added: #3f7a33;
+  --diff-removed: #c23a30;
+  --pr-merged: #8a5a8f;
+  --file-accent: #b35c1e;
+
+  /* Terminal — the Ghostty Tiki Love Dark ANSI palette, both modes */
+  --ansi-0: #1a1e14;
+  --ansi-1: #e85a4f;
+  --ansi-2: #6aaf5c;
+  --ansi-3: #f0a84c;
+  --ansi-4: #8a9a6a;
+  --ansi-5: #d4843e;
+  --ansi-6: #5c9a7a;
+  --ansi-7: #e8d5b7;
+  --ansi-8: #4a5440;
+  --ansi-9: #f07a6f;
+  --ansi-10: #8acf7a;
+  --ansi-11: #f0c06c;
+  --ansi-12: #a0b08a;
+  --ansi-13: #e8a060;
+  --ansi-14: #7ab89a;
+  --ansi-15: #f4e8d0;
+
+  /* Readable text on each ANSI color used as a background */
+  --ansi-bg-fg-0: #f4e8d0;
+  --ansi-bg-fg-1: #1a1410;
+  --ansi-bg-fg-2: #1a1410;
+  --ansi-bg-fg-3: #1a1410;
+  --ansi-bg-fg-4: #1a1410;
+  --ansi-bg-fg-5: #1a1410;
+  --ansi-bg-fg-6: #1a1410;
+  --ansi-bg-fg-7: #1a1410;
+  --ansi-bg-fg-8: #f4e8d0;
+  --ansi-bg-fg-9: #1a1410;
+  --ansi-bg-fg-10: #1a1410;
+  --ansi-bg-fg-11: #1a1410;
+  --ansi-bg-fg-12: #1a1410;
+  --ansi-bg-fg-13: #1a1410;
+  --ansi-bg-fg-14: #1a1410;
+  --ansi-bg-fg-15: #1a1410;
+}
+
+.dark {
+  /* Anchors — straight from the Ghostty theme */
+  --canvas: #1a1410;
+  --ink: #e8d5b7;
+
+  /* Accent — the cursor orange */
+  --primary: #f0a84c;
+  --primary-foreground: #1a1410;
+
+  /* Semantics — the bright ANSI tier for legibility on dark */
+  --destructive: #e85a4f;
+  --destructive-foreground: #1a1410;
+  --destructive-text: #f07a6f;
+  --warning: #f0c06c;
+  --warning-text: #f0c06c;
+  --attention: #f0a84c;
+  --success: #8acf7a;
+  --diff-added: #6aaf5c;
+  --diff-removed: #e85a4f;
+  --pr-merged: #c9a0c0;
+  --file-accent: #d4843e;
+}

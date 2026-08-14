@@ -10,6 +10,10 @@ Personal terminal configuration for macOS. All dotfiles are symlinked to this re
 - **lazyvim** - Neovim distribution with LSP, debugging, and plugins
 - **tmux** - Terminal multiplexer with 256-color support
 - **vim** - Classic vim with pathogen plugins
+- **bb** - Agentic IDE configuration: custom theme, keyboard overrides, and path-installed plugins (see [bb/README.md](bb/README.md))
+- **boxy** - Self-contained Notion Boxy workstream helpers (`gwb`/`gwbr`), shareable as one directory (see [boxy/README.md](boxy/README.md))
+- **orca** - Keybindings + terminal theme for the Orca agent IDE
+- **skills** - Shared Claude Code / Codex skills, symlinked into both tool dirs
 
 ## Prerequisites
 
@@ -71,6 +75,10 @@ ln -sfn ~/Documents/config/terminal-config/env/lazyvim/nvim ~/.config/nvim
 mkdir -p ~/.config/ghostty
 ln -sfn ~/Documents/config/terminal-config/env/ghostty/config ~/.config/ghostty/config
 
+# Orca (keybindings; read at startup from ~/.orca/keybindings.json)
+mkdir -p ~/.orca
+ln -sfn ~/Documents/config/terminal-config/env/orca/keybindings.json ~/.orca/keybindings.json
+
 # Neofetch
 mkdir -p ~/.config/neofetch
 ln -sfn ~/Documents/config/terminal-config/neofetch/config.conf ~/.config/neofetch/config.conf
@@ -78,6 +86,15 @@ ln -sfn ~/Documents/config/terminal-config/neofetch/config.conf ~/.config/neofet
 # Neofetch custom ASCII (requires sudo)
 sudo mkdir -p /etc/neofetch
 sudo ln -sfn ~/Documents/config/terminal-config/neofetch/duck-half.ansii /etc/neofetch/duck-half.ansii
+
+# Shared skills (Claude Code + Codex)
+mkdir -p ~/.claude/skills ~/.codex/skills
+for skill in ~/Documents/config/terminal-config/skills/*/; do
+  name=$(basename "$skill")
+  ln -sfn "$skill" ~/.claude/skills/"$name"
+  ln -sfn "$skill" ~/.codex/skills/"$name"
+done
+# Or equivalently: `make link-skills`
 ```
 
 ### 4. Configure Powerlevel10k
@@ -91,13 +108,24 @@ terminal-config/
 ├── .vimrc                    # Vim configuration (pathogen, gruvbox)
 ├── Makefile                  # Automated setup commands
 ├── README.md
+├── boxy/                     # Self-contained Boxy workstream module (gwb/gwbr)
+│   ├── boxy.zsh              # Source this one file to install
+│   └── README.md
+├── bb/                       # bb (agentic IDE) config — see bb/README.md
+│   ├── setup.sh              # Bootstrap: theme + keyboard overrides + plugin installs
+│   ├── keyboard-overrides.json
+│   ├── theme/tiki-love-dark/ # Custom app palette (Ghostty port)
+│   └── plugins/              # Custom plugins, path-installed (live-editable)
 ├── env/
 │   ├── .tmux.conf            # Tmux configuration
-│   ├── .zsh_profile          # Worktree functions (gwa, gwr, gwrecover)
-│   ├── .zsh_functions        # Theme-switch functions (dark/light-ui, dark/light-term)
+│   ├── .zsh_profile          # Worktree functions (gwa, gwr, gwrecover); sources boxy/
+│   ├── .zsh_functions        # Theme switch + process/memory triage & tsgo reapers
+│   │                         #   (mem-owners, proc-impact, tsgo-reap*, notion-runs)
 │   ├── .zshrc                # Zsh configuration
 │   ├── p10k-dark.zsh         # Powerlevel10k config (dark)
 │   ├── p10k-light.zsh        # Powerlevel10k config (light)
+│   ├── launchd/
+│   │   └── com.nlorio.tsgo-watch.plist  # tsgo spike recorder + idle/budget reaper (60s)
 │   ├── ghostty/
 │   │   └── config            # Ghostty terminal config
 │   ├── lazyvim/
@@ -110,10 +138,13 @@ terminal-config/
 │   └── vim/
 │       ├── autoload/         # Pathogen
 │       └── bundle/           # Vim plugins (lightline)
-└── neofetch/
-    ├── config.conf           # Neofetch display config
-    ├── duck-half.ansii       # Custom ASCII art
-    └── neofetch              # Custom neofetch binary
+├── neofetch/
+│   ├── config.conf           # Neofetch display config
+│   ├── duck-half.ansii       # Custom ASCII art
+│   └── neofetch              # Custom neofetch binary
+└── skills/                   # Shared Claude Code / Codex skills
+    └── <skill-name>/
+        └── SKILL.md          # Frontmatter: name, description; body is the prompt
 ```
 
 ## Configuration Details
@@ -159,6 +190,63 @@ Minimal config with 256-color terminal support. The session picker (`<prefix> s`
 is sorted by name rather than by activity time, so numeric-prefixed sessions
 stay in a stable, predictable order.
 
+### bb (agentic IDE)
+
+Everything customizing [bb](bb/README.md) lives in `bb/`. To leverage it on a
+new machine, start the bb server and run the bootstrap (idempotent, safe to
+re-run):
+
+```bash
+./bb/setup.sh
+```
+
+That one script applies all three layers:
+
+- **Theme** — symlinks `bb/theme/tiki-love-dark/` (the Ghostty Tiki Love Dark
+  port: dark faithful, light derived cream, full ANSI terminal palette) into
+  `~/.bb/theme/` and activates it. Edit the palette here, then re-run
+  `bb theme set tiki-love-dark` to pick up changes.
+- **Keyboard overrides** — replays `bb/keyboard-overrides.json` (tmux-flavored
+  pane chords: `ctrl+alt+z` zoom, `ctrl+alt+x` kill, `ctrl+alt+o` cycle,
+  `ctrl+alt+1-8` select) via `bb settings keyboard set`. After changing
+  bindings in bb, refresh the export with
+  `bb settings keyboard list --json | jq .overrides`.
+- **Plugins** — path-installs every plugin under `bb/plugins/`, so bb loads
+  them live from this repo. The edit loop is: change the source here, then
+  `bb plugin reload <id>` — no reinstall.
+
+Custom plugins:
+
+- **`bb-plugin-worktrees`** — worktree ↔ thread dashboard: every git worktree
+  (bb-managed *and* external, e.g. orca) with project, last-touched staleness,
+  and adopt/cleanup actions. Stale-while-revalidate: shows the cached scan
+  instantly and rescans in the background.
+- **`bb-plugin-notion-ci`** — PR + CI dashboard for notion-next/notion-data
+  (gh-backed; search, Mine/author filters, status chips, deploy-console links,
+  `bb notion-ci prs|sync` CLI, 5-min sync cron). Replaces the official github
+  plugin, whose sync breaks on repos with issues disabled.
+- **`bb-plugin-activity-monitor`** — resource manager: process tree grouped by
+  project/worktree with rollups + sparklines, flat view, kill actions.
+- **`bb-plugin-quickstart`** — one-click thread presets: tmux, dev server, and
+  nvim terminals plus a localhost browser tab.
+- **`bb-plugin-nvim-opener`** — fileOpener: code files open in a bb terminal
+  running nvim in the file's worktree (enable under Settings → File openers).
+- **`bb-plugin-boxy-prefix`** — prefixes thread titles with `boxy - ` when the
+  thread runs on a boxy host, so remote threads sort together.
+
+What is *not* in this repo (it's bb server state in `~/.bb/bb.db`): theme
+selection, the live keyboard overrides (this repo holds the export), plugin
+settings (`bb plugin config <id>`), and projects/threads/terminals. See
+[bb/README.md](bb/README.md) for the full layout.
+
+### Orca
+
+`env/orca/` holds the Orca agent IDE config: `keybindings.json` (symlinked to
+`~/.orca/keybindings.json` by `make link`; read at startup) and
+`tiki-love-dark.yaml`, a Warp-format port of the Ghostty theme — import it via
+Orca settings → "Import theme YAML" (Orca's Ghostty importer can't resolve
+`theme = <name>` references, so the palette is inlined).
+
 ## Theme Switching
 
 The terminal and Neovim track their themes separately so the editor can be flipped
@@ -193,13 +281,26 @@ gwa feature-branch
 
 This will:
 1. Create a new tmux session named `feature-branch`
-2. Create a git worktree at `~/worktrees/<repo>/feature-branch`
-3. Open 3 windows: main shell, secondary shell, and Claude Code
+2. Create a git worktree at `~/worktrees/feature-branch`
+3. Run `notion install` in window 0
+4. Prompt for a **layout** (default or long-running) and an **AI assistant** (claude or codex)
+
+**Default layout** (3 windows):
+- Window 0: shell with `notion install`
+- Window 1: empty shell
+- Window 2: single AI assistant
+
+**Long-running layout** (4 windows, role-specialized agents):
+- Window 0: shell with `notion install`
+- Window 1: empty shell
+- Window 2 (`agents`): vertical split — `implementor` pane on the left, `researcher` pane on the right, both running the chosen AI assistant. Pane titles render via `pane-border-status top` on that window.
+- Window 3 (`review`): `adversarial` reviewer pane running the chosen AI assistant.
+- A persistent TODO file is created at `~/Documents/plans/worktree-todos/<branch>/TODO.md` and symlinked into the worktree as `WORKTREE-TODO.md` (git-ignored per-worktree). Created once per branch name; survives `gwr` so notes outlive the worktree.
+- Each agent is seeded with role context from `env/worktree-roles/{implementor,researcher,adversarial}.md`. The implementor runs as a long-running loop pulling items from the TODO list (read-only); the researcher never implements; the adversarial reviewer waits to be prompted, then appends gap items to the TODO list. Edit those files to tune behavior — changes take effect on the next `gwa` / `gwrecover`. Override the directory via `_GW_ROLES_DIR` if you keep your roles elsewhere.
 
 ### `gwr` - Git Worktree Remove
 
-Counterpart to `gwa`. Kills the tmux session, removes the worktree, and deletes
-the branch:
+Counterpart to `gwa`. Kills the tmux session, removes the worktree, and deletes the branch:
 
 ```bash
 gwr feature-branch
@@ -207,14 +308,100 @@ gwr feature-branch
 
 ### `gwrecover` - Interactive Worktree Recovery
 
-Walks every existing worktree and offers to either recreate its tmux session
-(mirroring the `gwa` layout) or delete the worktree and branch. Useful after a
-reboot or `tmux kill-server` that wiped tmux state while the worktrees on disk
-survived.
+Walks every existing worktree and offers to either recreate its tmux session (mirroring the `gwa` layout — prompts for layout and AI assistant per worktree) or delete the worktree and branch. Useful after a reboot that wiped tmux state. Deletions run asynchronously so the prompt loop stays snappy.
 
-```bash
-gwrecover
-```
+### `gwb` / `gwbr` - Boxy Workstreams (self-contained module)
+
+Boxy workstream helpers live in [`boxy/`](boxy/README.md) — a standalone,
+shareable module (take the one directory; nothing else in this repo is
+required). `.zsh_profile` sources it, and `gwa`'s boxy mode delegates to it.
+
+- **`gwb <name>`** — create (or reattach to) a local tmux session that runs
+  `notion boxy create <name>`, which provisions the remote env and attaches to
+  its tmux nested inside the local session. The remote side survives SSH drops
+  and laptop sleep; re-run `gwb <name>` to reconnect.
+- **`gwbr <name>`** — kill the local session, then confirm before
+  `notion boxy destroy <name>` (irreversible).
+
+## Process & Memory Management
+
+Running many concurrent editor + agent sessions against a large monorepo means many
+`tsgo` (the Go TypeScript LSP) processes, each of which can grow to ~18–24GB and
+never frees its heap — enough stale sessions will swap-thrash the machine. These
+helpers (in `.zsh_functions`) triage, reap, and cap that usage. A launchd agent
+(`env/launchd/com.nlorio.tsgo-watch.plist`) runs the automated pieces every 60s.
+
+### Triage — what's eating memory/CPU
+
+- **`mem-owners [N] [regex]`** — top-N heavy processes with a system-pressure line
+  (compressor/swap — the *real* slowdown signal, not raw RSS), each mapped back to
+  the owning tmux pane + app, with a `⚠ runaway?` flag for high mem **and** CPU.
+- **`tsgo-owners`** — the tsgo LSPs only, by memory + owning session (`mem-owners`
+  filtered to native tsgo).
+- **`proc-impact <pid> [secs]`** — drill-down on one process: precise CPU over a
+  window vs. lifetime average, memory, owner, and a kill/keep verdict.
+
+### Reap — reclaim memory (tsgo respawns cold on next LSP request)
+
+- **`tsgo-reap [<pid>…]`** — with no args, prints the table + usage; with pids,
+  kills them. `tsgo-reap --over <GB>` kills every tsgo above a size (after a y/N).
+- **`tsgo-reap-idle [mins]`** — SIGTERM tsgo idle (≈0% CPU) for ≥ N minutes
+  (default 20). The local stand-in for the idle-TTL that lspMcp/tsgo lack.
+- **`tsgo-reap-budget [-n] [GB]`** — enforce a **total**-RSS ceiling across all
+  tsgo (default `TSGO_BUDGET_GB`=40). Reaps **idle-first** — so if idle memory
+  covers the overage, the session you're actively in is spared — then
+  largest-active, until back under budget. `-n` previews.
+- All kills escalate SIGTERM → SIGKILL via `_tsgo_kill` (a busy/swap-stuck tsgo
+  ignores plain SIGTERM).
+
+### Watch / record
+
+- **`tsgo-watch [interval]`** — foreground loop that snapshots any tsgo over
+  `TSGO_MEM_GB` (8) / `TSGO_CPU` (200%) to `~/tsgo-traces/` (pressure + proc-impact
+  + owner chain + open-dir scope + a CPU sample). Runaways settle within a minute,
+  so this catches the "why" in the act. `tsgo-watch-once` is a single pass.
+- **launchd agent** (`com.nlorio.tsgo-watch`): every 60s runs `tsgo-watch-once`
+  (record spikes) → `tsgo-reap-idle` (evict long-idle) → `tsgo-reap-budget`
+  (enforce the ceiling). Install: `cp env/launchd/com.nlorio.tsgo-watch.plist
+  ~/Library/LaunchAgents/ && launchctl load -w <path>`. Tunables live in the
+  plist's `EnvironmentVariables` (`TSGO_MEM_GB`, `TSGO_CPU`, `TSGO_IDLE_MIN`,
+  `TSGO_BUDGET_GB`). Note: launchd can't read `~/Documents` (TCC), so the agent
+  sources a copy of `.zsh_functions` under `~/Library/Application Support/`; an
+  interactive shell refreshes that copy whenever the repo file changes.
+- **Status line** (`~/.claude/statusline-tsgo.sh`, wired via `~/.claude/settings.json`)
+  shows `tsgo: NN GB (N procs)` in the Claude Code prompt — dim ≤60% of budget,
+  yellow over that, red at the budget. The glanceable early warning before the
+  enforcer acts. Uses the same "what is a tsgo" match as the reapers.
+
+### `notion-runs` / `notion-run-kill` — dev-server instances
+
+A `notion run` forks ~15 children that inherit its listening sockets, so `lsof`
+maps every 3xxx port to every child. These key off the launcher instead:
+
+- **`notion-runs`** — lists running `notion run` instances: pid, base **port**
+  (read from `--portOffset`/`--port` in the process tree), age, process count,
+  summed memory, and workspace.
+- **`notion-run-kill [-n] <pid|workspace|port>`** — closes an instance by killing
+  **only the launcher's descendant tree** (never your shells/claude/tmux). Matches
+  on launcher pid, base port, or a workspace substring. `-n` previews.
+
+## Shared Skills
+
+`skills/` holds Claude Code / Codex skills in the portable `<name>/SKILL.md` format. `make link-skills` symlinks each skill into both `~/.claude/skills/<name>` and `~/.codex/skills/<name>`, so editing the file in this repo immediately affects both tools.
+
+To add a new skill:
+
+1. `mkdir skills/<name>`
+2. Create `skills/<name>/SKILL.md` with frontmatter:
+   ```
+   ---
+   name: <name>
+   description: <one-line description>
+   ---
+   ```
+3. Run `make link-skills` to publish it to both tools (idempotent; picks up new dirs automatically).
+
+`make unlink-skills` removes only the symlinks this repo creates — `~/.codex/skills/.system/` and any externally-sourced skill directories (e.g. `~/.claude/skills/perf-review/`) are left alone.
 
 ## Notes
 

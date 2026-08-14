@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  tsgo spike recorder + idle eviction. Every 60s:
+   - tsgo-watch-once: writes a full trace for any tsgo over TSGO_MEM_GB /
+     TSGO_CPU to ~/tsgo-traces/ (catches runaways in the act).
+   - tsgo-reap-idle:  SIGTERMs any tsgo idle (≈0% CPU) for >= TSGO_IDLE_MIN
+     minutes, so inactive sessions stop hogging memory (respawns on next use).
+
+  Install:   cp this to ~/Library/LaunchAgents/ && launchctl load -w <path>
+  Stop:      launchctl unload -w ~/Library/LaunchAgents/com.nlorio.tsgo-watch.plist
+  Tune:      edit the EnvironmentVariables below, then reload.
+  NOTE: paths are absolute (launchd doesn't expand ~) — adjust the username if
+  you're not nlorio.
+  TCC: launchd agents can't read ~/Documents (where the dotfiles repo lives), so
+  this sources a copy of .zsh_functions kept under ~/Library/Application Support.
+  The repo's .zsh_functions refreshes that copy on every interactive shell load.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nlorio.tsgo-watch</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-c</string>
+    <string>source "$HOME/Library/Application Support/com.nlorio.tsgo-watch/zsh_functions" &amp;&amp; tsgo-watch-once; tsgo-reap-idle; tsgo-reap-budget</string>
+  </array>
+
+  <key>StartInterval</key>
+  <integer>60</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd jobs get a minimal PATH; the recorder needs these tool dirs. -->
+    <key>PATH</key>
+    <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>TSGO_MEM_GB</key>
+    <string>8</string>
+    <key>TSGO_CPU</key>
+    <string>200</string>
+    <!-- idle eviction: reap tsgo idle this many minutes (≈0% CPU). -->
+    <key>TSGO_IDLE_MIN</key>
+    <string>20</string>
+    <!-- hard budget: total tsgo RSS ceiling (GB). Over this, reap idle-first
+         then largest-active until back under. Matches statusline's red at 40. -->
+    <key>TSGO_BUDGET_GB</key>
+    <string>40</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/nlorio/tsgo-traces/watch.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nlorio/tsgo-traces/watch.err.log</string>
+</dict>
+</plist>

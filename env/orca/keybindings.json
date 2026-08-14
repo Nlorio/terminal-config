@@ -1,0 +1,7 @@
+{
+  "keybindings": {
+    "worktree.palette": "Ctrl+Shift+S",
+    "terminal.splitRight": "Ctrl+Shift+5",
+    "terminal.splitDown": "Ctrl+Shift+'"
+  }
+}

@@ -84,11 +84,27 @@ link:
 
 	@# Ghostty
 	@ln -sfn $(REPO_DIR)/env/ghostty/config $(HOME)/.config/ghostty/config
+	@cp -r $(REPO_DIR)/env/ghostty/themes/ $(HOME)/.config/ghostty/themes/
+	@cp -r $(REPO_DIR)/env/ghostty/shaders/ $(HOME)/.config/ghostty/shaders/
 	@echo "  ~/.config/ghostty/config -> env/ghostty/config"
+	@echo "  ~/.config/ghostty/themes/ <- env/ghostty/themes/ (copied)"
+	@echo "  ~/.config/ghostty/shaders/ <- env/ghostty/shaders/ (copied)"
+
+	@# Orca (keybindings; theme yaml is imported via Orca settings, not symlinked)
+	@mkdir -p $(HOME)/.orca
+	@ln -sfn $(REPO_DIR)/env/orca/keybindings.json $(HOME)/.orca/keybindings.json
+	@echo "  ~/.orca/keybindings.json -> env/orca/keybindings.json"
 
 	@# Neofetch
 	@ln -sfn $(REPO_DIR)/neofetch/config.conf $(HOME)/.config/neofetch/config.conf
 	@echo "  ~/.config/neofetch/config.conf -> neofetch/config.conf"
+
+	@# Boxy → bb enrollment scripts (used by the bb-plugin-boxy "Enroll in bb" button)
+	@mkdir -p $(HOME)/.local/bin
+	@ln -sfn $(REPO_DIR)/boxy/bin/bb-boxy-up $(HOME)/.local/bin/bb-boxy-up
+	@ln -sfn $(REPO_DIR)/boxy/bin/bb-boxy-down $(HOME)/.local/bin/bb-boxy-down
+	@ln -sfn $(REPO_DIR)/boxy/bin/bb-boxy-tunnel $(HOME)/.local/bin/bb-boxy-tunnel
+	@echo "  ~/.local/bin/bb-boxy-{up,down,tunnel} -> boxy/bin/"
 
 	@echo ""
 	@echo "Symlinks created! Note: neofetch custom ASCII requires sudo:"
@@ -107,5 +123,11 @@ unlink:
 	@rm -f $(HOME)/.vim
 	@rm -f $(HOME)/.config/nvim
 	@rm -f $(HOME)/.config/ghostty/config
+	@rm -rf $(HOME)/.config/ghostty/themes
+	@rm -rf $(HOME)/.config/ghostty/shaders
 	@rm -f $(HOME)/.config/neofetch/config.conf
+	@rm -f $(HOME)/.orca/keybindings.json
+	@rm -f $(HOME)/.local/bin/bb-boxy-up
+	@rm -f $(HOME)/.local/bin/bb-boxy-down
+	@rm -f $(HOME)/.local/bin/bb-boxy-tunnel
 	@echo "Symlinks removed."

@@ -6,3 +6,6 @@ backup/
 
 # Dependencies
 node_modules/
+
+# bb plugin build output
+bb/plugins/*/dist/
